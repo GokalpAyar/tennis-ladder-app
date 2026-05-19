@@ -23,9 +23,23 @@ function DashboardPage() {
               </p>
             </div>
             {profileStatus === 'approved' && (
-              <Link className="btn-primary w-full text-sm sm:w-auto" to="/ladder">
-                View Full Ladder
-              </Link>
+              <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                <a
+                  className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/20"
+                  href="#match-activity"
+                >
+                  Match Activity
+                </a>
+                <a
+                  className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/20"
+                  href="#scheduled-matches"
+                >
+                  Scheduled Matches
+                </a>
+                <Link className="btn-primary w-full text-sm sm:w-auto" to="/ladder">
+                  Full Ladder
+                </Link>
+              </div>
             )}
           </div>
         </header>

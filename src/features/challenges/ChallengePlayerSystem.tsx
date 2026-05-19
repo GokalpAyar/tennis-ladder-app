@@ -149,15 +149,16 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
     );
   }, [matches]);
 
-  const pendingChallengeMatches = useMemo(() => {
-    return matches.filter((match) => match.status === 'pending');
-  }, [matches]);
-
-  const timeSelectionMatches = useMemo(() => {
-    return matches.filter(
-      (match) => match.status === 'accepted' || match.status === 'time_proposed',
-    );
-  }, [matches]);
+  const matchActivityMatches = useMemo(() => {
+    return isDashboard
+      ? matches.filter(
+          (match) =>
+            match.status === 'pending' ||
+            match.status === 'accepted' ||
+            match.status === 'time_proposed',
+        )
+      : activeMatches;
+  }, [activeMatches, isDashboard, matches]);
 
   const blockingMatches = useMemo(() => {
     return matches.filter(
@@ -999,21 +1000,17 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
         )}
       </section>
 
-      <section className={cardClass}>
+      <section className={cardClass} id="match-activity">
         <SectionHeader
           icon={<MatchIcon />}
-          title="My Active Challenges"
-          description={
-            isDashboard
-              ? 'Challenges waiting for an accept or decline.'
-              : 'Accept, decline, or coordinate a match time for open challenges.'
-          }
+          title={isDashboard ? 'Match Activity' : 'My Active Challenges'}
+          description="Pending challenges, accepted matches, time proposals, and waiting states."
         />
-        {(isDashboard ? pendingChallengeMatches : activeMatches).length === 0 ? (
-          <EmptyState message="No active challenges yet." />
+        {matchActivityMatches.length === 0 ? (
+          <EmptyState message="No match activity yet." />
         ) : (
           <div className="mt-5 space-y-4">
-            {(isDashboard ? pendingChallengeMatches : activeMatches).map((match) => (
+            {matchActivityMatches.map((match) => (
               <ChallengeCard
                 actionId={actionId}
                 cancelingMatchId={cancelingMatchId}
@@ -1036,42 +1033,6 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
           </div>
         )}
       </section>
-
-      {isDashboard && (
-        <section className={cardClass}>
-          <SectionHeader
-            icon={<ClockIcon />}
-            title="Time Proposal"
-            description="Send up to three refined match time options or select an opponent's proposal."
-          />
-          {timeSelectionMatches.length === 0 ? (
-            <EmptyState message="No match times need attention right now." />
-          ) : (
-            <div className="mt-5 space-y-4">
-              {timeSelectionMatches.map((match) => (
-                <ChallengeCard
-                  actionId={actionId}
-                  cancelingMatchId={cancelingMatchId}
-                  currentPlayer={currentPlayer}
-                  hasOtherActiveMatch={hasActiveMatchExcluding(match.id)}
-                  key={match.id}
-                  match={match}
-                  playersById={playersById}
-                  proposalDrafts={timeProposalDrafts[match.id] ?? getDefaultTimeProposalDrafts()}
-                  onAccept={() => updateChallengeStatus(match.id, 'accepted')}
-                  onDecline={() => updateChallengeStatus(match.id, 'declined')}
-                  onPropose={(event) => proposeMatchTime(match, event)}
-                  onChooseTime={(proposal) => chooseMatchTime(match, proposal)}
-                  onCancel={() => cancelMatch(match)}
-                  onProposalChange={(index, nextDraft) =>
-                    updateTimeProposalDraft(match.id, index, nextDraft)
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
 
       <ScheduledMatchesSection
         actionId={actionId}
@@ -1206,7 +1167,7 @@ function ScheduledMatchesSection({
   onWinnerChange,
 }: ScheduledMatchesSectionProps) {
   return (
-    <section className={sectionClass}>
+    <section className={sectionClass} id="scheduled-matches">
       <SectionHeader
         icon={<CalendarIcon />}
         title="Scheduled Matches"
