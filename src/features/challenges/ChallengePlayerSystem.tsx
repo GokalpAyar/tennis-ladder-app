@@ -1636,17 +1636,17 @@ function PyramidLadder({
   }
 
   return (
-    <div className="ladder-pyramid-panel overflow-hidden rounded-[2rem] border border-white/20 p-3 shadow-2xl shadow-court-900/20 sm:p-5">
+    <div className="ladder-pyramid-panel overflow-hidden rounded-[2rem] border border-line-200 p-3 shadow-xl shadow-court-900/10 sm:p-5">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h3 className="text-xl font-black tracking-tight text-white sm:text-2xl">
+          <h3 className="text-xl font-black tracking-tight text-ink-900 sm:text-2xl">
             Pyramid Ladder
           </h3>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-court-100">
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-700">
             All 50 ladder positions are shown. Open spots are ready for the next players who join.
           </p>
         </div>
-        <div className="w-fit rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-black text-white shadow-sm">
+        <div className="w-fit rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-black text-court-900 shadow-sm">
           {players.length}/{TOTAL_LADDER_POSITIONS} filled
         </div>
       </div>
@@ -1666,26 +1666,26 @@ function PyramidLadder({
           Zoom In
         </button>
         <button
-          className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-extrabold text-white transition hover:bg-white/20"
+          className="rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-extrabold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
           type="button"
           onClick={resetZoom}
         >
           Reset Zoom
         </button>
         <button
-          className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-extrabold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-extrabold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-50"
           type="button"
           onClick={centerOnMyPosition}
           disabled={!currentPlayer}
         >
           Center on My Position
         </button>
-        <span className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white/80">
+        <span className="rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-ink-700 shadow-sm">
           {Math.round(zoom * 100)}%
         </span>
       </div>
       <div
-        className="h-[70svh] overflow-auto overscroll-contain rounded-[1.6rem] border border-white/20 bg-white/10 px-3 py-5 shadow-inner scroll-smooth [-webkit-overflow-scrolling:touch] sm:px-5 sm:py-6 lg:px-6"
+        className="h-[70svh] overflow-auto overscroll-contain rounded-[1.6rem] border border-line-200 bg-white/70 px-3 py-5 shadow-inner scroll-smooth [-webkit-overflow-scrolling:touch] sm:px-5 sm:py-6 lg:px-6"
         ref={scrollContainerRef}
       >
         <div

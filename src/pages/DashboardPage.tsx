@@ -12,26 +12,26 @@ function DashboardPage() {
         <header className="hero-panel dashboard-hero rounded-[2rem] p-4 sm:p-5 lg:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-white/70">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-court-700">
                 Tennis Ladder
               </p>
-              <h1 className="mt-1.5 max-w-3xl text-2xl font-black leading-tight tracking-tight text-white sm:text-3xl lg:text-4xl">
+              <h1 className="mt-1.5 max-w-3xl text-2xl font-black leading-tight tracking-tight text-ink-900 sm:text-3xl lg:text-4xl">
                 Dashboard
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-700">
                 See your rank, eligible opponents, active challenges, and scheduled matches at a glance.
               </p>
             </div>
             {profileStatus === 'approved' && (
               <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
                 <a
-                  className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/20"
+                  className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
                   href="#match-activity"
                 >
                   Match Activity
                 </a>
                 <a
-                  className="inline-flex items-center justify-center rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/20"
+                  className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
                   href="#scheduled-matches"
                 >
                   Scheduled Matches
