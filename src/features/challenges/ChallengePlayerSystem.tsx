@@ -28,7 +28,8 @@ type MatchStatus =
   | 'declined'
   | 'scheduled'
   | 'completed'
-  | 'canceled';
+  | 'canceled'
+  | 'expired';
 
 type Match = {
   id: string;
@@ -45,15 +46,19 @@ type Match = {
   canceled_at: string | null;
   canceled_by: string | null;
   winner_id: string | null;
-  score: string | null;
   stats_recorded: boolean;
   ranking_updated: boolean;
   created_at: string;
 };
 
-type ScoreDraft = {
+type ScheduledMatchSlot = {
+  id: string;
+  proposed_match_at: string | null;
+  scheduled_match_ends_at: string | null;
+};
+
+type WinnerDraft = {
   winnerId: string;
-  score: string;
 };
 
 type MatchTimeProposal = {
@@ -93,6 +98,8 @@ const CANCELABLE_MATCH_STATUSES: MatchStatus[] = [
   'time_proposed',
   'scheduled',
 ];
+const ACTIVE_MATCH_MESSAGE =
+  'You already have an active match. Complete or cancel it before starting another.';
 
 function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSystemProps) {
   const [currentPlayer, setCurrentPlayer] = useState<RankedPlayer | null>(null);
@@ -104,8 +111,8 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
   const [isLoading, setIsLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
   const [cancelingMatchId, setCancelingMatchId] = useState<string | null>(null);
-  const [submittingScoreId, setSubmittingScoreId] = useState<string | null>(null);
-  const [scoreDrafts, setScoreDrafts] = useState<Record<string, ScoreDraft>>({});
+  const [submittingWinnerId, setSubmittingWinnerId] = useState<string | null>(null);
+  const [winnerDrafts, setWinnerDrafts] = useState<Record<string, WinnerDraft>>({});
   const [reschedulingMatchIds, setReschedulingMatchIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -161,6 +168,7 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
         match.status === 'scheduled',
     );
   }, [matches]);
+  const hasActiveMatch = blockingMatches.length > 0;
 
   const scheduledMatches = useMemo(() => {
     return matches.filter((match) => match.status === 'scheduled');
@@ -257,7 +265,7 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
     const { data: matchRows, error: matchesError } = await supabase
       .from('matches')
       .select(
-        'id, challenger_id, opponent_id, status, proposed_match_at, proposed_match_options, scheduled_match_ends_at, proposed_by_player_id, challenger_agreed_at, opponent_agreed_at, cancel_reason, canceled_at, canceled_by, winner_id, score, stats_recorded, ranking_updated, created_at',
+        'id, challenger_id, opponent_id, status, proposed_match_at, proposed_match_options, scheduled_match_ends_at, proposed_by_player_id, challenger_agreed_at, opponent_agreed_at, cancel_reason, canceled_at, canceled_by, winner_id, stats_recorded, ranking_updated, created_at',
       )
       .or(`challenger_id.eq.${userId},opponent_id.eq.${userId}`)
       .order('created_at', { ascending: false });
@@ -284,6 +292,11 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
       return;
     }
 
+    if (hasActiveMatch) {
+      setErrorMessage(ACTIVE_MATCH_MESSAGE);
+      return;
+    }
+
     setActionId(opponentId);
     setMessage('');
     setErrorMessage('');
@@ -306,6 +319,11 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
   }
 
   async function updateChallengeStatus(matchId: string, status: 'accepted' | 'declined') {
+    if (status === 'accepted' && hasActiveMatchExcluding(matchId)) {
+      setErrorMessage(ACTIVE_MATCH_MESSAGE);
+      return;
+    }
+
     setActionId(matchId);
     setMessage('');
     setErrorMessage('');
@@ -396,6 +414,20 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
     setMessage('');
     setErrorMessage('');
 
+    const { hasOverlap, error: overlapError } = await hasScheduledOverlap(match, proposal);
+
+    if (overlapError) {
+      setActionId(null);
+      setErrorMessage(overlapError);
+      return;
+    }
+
+    if (hasOverlap) {
+      setActionId(null);
+      setErrorMessage('One player already has a match during this time.');
+      return;
+    }
+
     const { error } = await supabase
       .from('matches')
       .update({
@@ -416,6 +448,45 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
 
     setMessage('Match scheduled. Please call the tennis office to reserve the court.');
     await loadChallengeData();
+  }
+
+  async function hasScheduledOverlap(match: Match, proposal: MatchTimeProposal) {
+    const { data, error } = await supabase
+      .from('matches')
+      .select('id, proposed_match_at, scheduled_match_ends_at')
+      .eq('status', 'scheduled')
+      .neq('id', match.id)
+      .or(
+        [
+          `challenger_id.eq.${match.challenger_id}`,
+          `opponent_id.eq.${match.challenger_id}`,
+          `challenger_id.eq.${match.opponent_id}`,
+          `opponent_id.eq.${match.opponent_id}`,
+        ].join(','),
+      );
+
+    if (error) {
+      return { hasOverlap: false, error: error.message };
+    }
+
+    const proposalStart = new Date(proposal.startAt);
+    const proposalEnd = new Date(proposal.endAt);
+
+    return {
+      hasOverlap: ((data ?? []) as ScheduledMatchSlot[]).some((scheduledMatch) => {
+        if (!scheduledMatch.proposed_match_at) {
+          return false;
+        }
+
+        const scheduledStart = new Date(scheduledMatch.proposed_match_at);
+        const scheduledEnd = scheduledMatch.scheduled_match_ends_at
+          ? new Date(scheduledMatch.scheduled_match_ends_at)
+          : new Date(scheduledStart.getTime() + 90 * 60_000);
+
+        return proposalStart < scheduledEnd && scheduledStart < proposalEnd;
+      }),
+      error: null,
+    };
   }
 
   async function cancelMatch(match: Match) {
@@ -494,48 +565,51 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
     });
   }
 
-  async function submitScore(match: Match, event: FormEvent<HTMLFormElement>) {
+  async function submitWinner(match: Match, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!currentPlayer || match.status !== 'scheduled') {
       return;
     }
 
-    const scoreDraft = scoreDrafts[match.id] ?? { winnerId: '', score: '' };
-    const score = scoreDraft.score.trim();
+    const winnerDraft = winnerDrafts[match.id] ?? { winnerId: '' };
     const validWinnerIds = new Set([match.challenger_id, match.opponent_id]);
 
-    if (!validWinnerIds.has(scoreDraft.winnerId)) {
-      setErrorMessage('Choose the match winner before submitting.');
+    if (!validWinnerIds.has(winnerDraft.winnerId)) {
+      setErrorMessage('Choose who won the match before submitting.');
       return;
     }
 
-    if (!score) {
-      setErrorMessage('Enter the match score before submitting.');
+    const winnerName = getPlayerName(winnerDraft.winnerId, currentPlayer, playersById);
+    const confirmed = window.confirm(
+      `Complete match and update ladder?\n\nWinner: ${winnerName}`,
+    );
+
+    if (!confirmed) {
       return;
     }
 
     setActionId(match.id);
-    setSubmittingScoreId(match.id);
+    setSubmittingWinnerId(match.id);
     setMessage('');
     setErrorMessage('');
 
     const { data, error } = await supabase
       .from('matches')
       .update({
-        winner_id: scoreDraft.winnerId,
-        score,
+        winner_id: winnerDraft.winnerId,
+        score: null,
         status: 'completed',
       })
       .eq('id', match.id)
-      .select('id, winner_id, score, status, stats_recorded, ranking_updated')
+      .select('id, winner_id, status, stats_recorded, ranking_updated')
       .maybeSingle();
 
     setActionId(null);
-    setSubmittingScoreId(null);
+    setSubmittingWinnerId(null);
 
     if (error) {
-      console.error('Submit score Supabase error:', {
+      console.error('Submit winner Supabase error:', {
         message: error.message,
         details: error.details,
         hint: error.hint,
@@ -546,58 +620,55 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
     }
 
     if (!data) {
-      setErrorMessage('Score could not be submitted because the match was not found.');
+      setErrorMessage('Winner could not be submitted because the match was not found.');
       await loadChallengeData();
       return;
     }
 
     if (!data.stats_recorded) {
-      console.error('Score submitted but stats were not recorded:', {
+      console.error('Winner submitted but stats were not recorded:', {
         matchId: match.id,
         challengerId: match.challenger_id,
         opponentId: match.opponent_id,
-        winnerId: scoreDraft.winnerId,
-        score,
+        winnerId: winnerDraft.winnerId,
         returnedMatch: data,
       });
       setErrorMessage(
-        'Score was saved, but wins/losses were not recorded. Check the Supabase stats trigger.',
+        'Winner was saved, but wins/losses were not recorded. Check the Supabase stats trigger.',
       );
       await loadChallengeData();
       return;
     }
 
     if (!data.ranking_updated) {
-      console.error('Score submitted but ranking movement was not checked:', {
+      console.error('Winner submitted but ranking movement was not checked:', {
         matchId: match.id,
         challengerId: match.challenger_id,
         opponentId: match.opponent_id,
-        winnerId: scoreDraft.winnerId,
-        score,
+        winnerId: winnerDraft.winnerId,
         returnedMatch: data,
       });
       setErrorMessage(
-        'Score and records were saved, but ranking movement was not checked. Check the Supabase ranking trigger.',
+        'Winner and records were saved, but ranking movement was not checked. Check the Supabase ranking trigger.',
       );
       await loadChallengeData();
       return;
     }
 
-    setScoreDrafts((current) => {
+    setWinnerDrafts((current) => {
       const nextDrafts = { ...current };
       delete nextDrafts[match.id];
       return nextDrafts;
     });
-    setMessage('Score submitted. Records updated and ladder movement checked.');
+    setMessage(`Winner submitted: ${winnerName}. Records updated and ladder movement checked.`);
     await loadChallengeData();
   }
 
-  function updateScoreDraft(matchId: string, nextDraft: Partial<ScoreDraft>) {
-    setScoreDrafts((current) => ({
+  function updateWinnerDraft(matchId: string, nextDraft: Partial<WinnerDraft>) {
+    setWinnerDrafts((current) => ({
       ...current,
       [matchId]: {
         winnerId: current[matchId]?.winnerId ?? '',
-        score: current[matchId]?.score ?? '',
         ...nextDraft,
       },
     }));
@@ -633,6 +704,10 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
 
       return samePair;
     });
+  }
+
+  function hasActiveMatchExcluding(matchId: string) {
+    return blockingMatches.some((match) => match.id !== matchId);
   }
 
   if (isLoading) {
@@ -864,11 +939,18 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
           icon={<TargetIcon />}
           title="Eligible Players to Challenge"
           description={
-            currentPlayer.rankPosition === 1
-              ? 'Rank 1 cannot challenge anyone.'
-              : 'Only players ranked up to 3 spots above you are available.'
+            hasActiveMatch
+              ? ACTIVE_MATCH_MESSAGE
+              : currentPlayer.rankPosition === 1
+                ? 'Rank 1 cannot challenge anyone.'
+                : 'Only players ranked up to 3 spots above you are available.'
           }
         />
+        {hasActiveMatch && (
+          <p className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900">
+            {ACTIVE_MATCH_MESSAGE}
+          </p>
+        )}
         {eligiblePlayers.length === 0 ? (
           <EmptyState message="No eligible players to challenge right now." />
         ) : (
@@ -895,6 +977,10 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
                   </div>
                   {blockingMatch ? (
                     <StatusBadge label={getStatusLabel(blockingMatch)} />
+                  ) : hasActiveMatch ? (
+                    <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-bold text-court-900">
+                      Finish active match first
+                    </span>
                   ) : (
                     <button
                       className="inline-flex items-center justify-center gap-2 rounded-full bg-court-900 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -932,6 +1018,7 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
                 actionId={actionId}
                 cancelingMatchId={cancelingMatchId}
                 currentPlayer={currentPlayer}
+                hasOtherActiveMatch={hasActiveMatchExcluding(match.id)}
                 key={match.id}
                 match={match}
                 playersById={playersById}
@@ -966,6 +1053,7 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
                   actionId={actionId}
                   cancelingMatchId={cancelingMatchId}
                   currentPlayer={currentPlayer}
+                  hasOtherActiveMatch={hasActiveMatchExcluding(match.id)}
                   key={match.id}
                   match={match}
                   playersById={playersById}
@@ -993,16 +1081,16 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
         playersById={playersById}
         proposalDraftsByMatchId={timeProposalDrafts}
         reschedulingMatchIds={reschedulingMatchIds}
-        scoreDrafts={scoreDrafts}
+        winnerDrafts={winnerDrafts}
         sectionClass={cardClass}
-        submittingScoreId={submittingScoreId}
+        submittingWinnerId={submittingWinnerId}
         onCancelReschedule={cancelReschedule}
         onCancel={cancelMatch}
         onProposalChange={updateTimeProposalDraft}
         onProposeTime={proposeMatchTime}
         onRequestReschedule={requestReschedule}
-        onScoreChange={updateScoreDraft}
-        onSubmitScore={submitScore}
+        onSubmitWinner={submitWinner}
+        onWinnerChange={updateWinnerDraft}
       />
 
       <CompletedMatchesSection
@@ -1062,6 +1150,7 @@ type ChallengeCardProps = {
   actionId: string | null;
   cancelingMatchId: string | null;
   currentPlayer: RankedPlayer;
+  hasOtherActiveMatch: boolean;
   match: Match;
   playersById: Map<string, RankedPlayer>;
   proposalDrafts: TimeProposalDraft[];
@@ -1081,9 +1170,9 @@ type ScheduledMatchesSectionProps = {
   playersById: Map<string, RankedPlayer>;
   proposalDraftsByMatchId: Record<string, TimeProposalDraft[]>;
   reschedulingMatchIds: Set<string>;
-  scoreDrafts: Record<string, ScoreDraft>;
   sectionClass: string;
-  submittingScoreId: string | null;
+  submittingWinnerId: string | null;
+  winnerDrafts: Record<string, WinnerDraft>;
   onCancelReschedule: (matchId: string) => void;
   onCancel: (match: Match) => void;
   onProposalChange: (
@@ -1093,8 +1182,8 @@ type ScheduledMatchesSectionProps = {
   ) => void;
   onProposeTime: (match: Match, event: FormEvent<HTMLFormElement>) => void;
   onRequestReschedule: (match: Match) => void;
-  onScoreChange: (matchId: string, nextDraft: Partial<ScoreDraft>) => void;
-  onSubmitScore: (match: Match, event: FormEvent<HTMLFormElement>) => void;
+  onSubmitWinner: (match: Match, event: FormEvent<HTMLFormElement>) => void;
+  onWinnerChange: (matchId: string, nextDraft: Partial<WinnerDraft>) => void;
 };
 
 function ScheduledMatchesSection({
@@ -1105,16 +1194,16 @@ function ScheduledMatchesSection({
   playersById,
   proposalDraftsByMatchId,
   reschedulingMatchIds,
-  scoreDrafts,
   sectionClass,
-  submittingScoreId,
+  submittingWinnerId,
+  winnerDrafts,
   onCancelReschedule,
   onCancel,
   onProposalChange,
   onProposeTime,
   onRequestReschedule,
-  onScoreChange,
-  onSubmitScore,
+  onSubmitWinner,
+  onWinnerChange,
 }: ScheduledMatchesSectionProps) {
   return (
     <section className={sectionClass}>
@@ -1205,53 +1294,53 @@ function ScheduledMatchesSection({
               </p>
               <form
                 className="mt-4 rounded-xl border border-line-200 bg-white p-4"
-                onSubmit={(event) => onSubmitScore(match, event)}
+                onSubmit={(event) => onSubmitWinner(match, event)}
               >
-                <p className="text-sm font-black text-ink-900">Submit match score</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-                  <label className="block">
-                    <span className="text-xs font-bold uppercase text-ink-700">
-                      Winner
-                    </span>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
-                      value={scoreDrafts[match.id]?.winnerId ?? ''}
-                      onChange={(event) =>
-                        onScoreChange(match.id, { winnerId: event.target.value })
-                      }
-                      required
-                    >
-                      <option value="">Select winner</option>
-                      <option value={match.challenger_id}>
-                        {getPlayerName(match.challenger_id, currentPlayer, playersById)}
-                      </option>
-                      <option value={match.opponent_id}>
-                        {getPlayerName(match.opponent_id, currentPlayer, playersById)}
-                      </option>
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-bold uppercase text-ink-700">
-                      Score
-                    </span>
-                    <input
-                      className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
-                      placeholder="6-4, 6-3"
-                      type="text"
-                      value={scoreDrafts[match.id]?.score ?? ''}
-                      onChange={(event) =>
-                        onScoreChange(match.id, { score: event.target.value })
-                      }
-                      required
-                    />
-                  </label>
+                <p className="text-sm font-black text-ink-900">Who won the match?</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {[match.challenger_id, match.opponent_id].map((playerId) => {
+                    const isSelected = winnerDrafts[match.id]?.winnerId === playerId;
+                    const playerName = getPlayerName(playerId, currentPlayer, playersById);
+
+                    return (
+                      <button
+                        className={`rounded-2xl border px-4 py-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          isSelected
+                            ? 'border-blue-300 bg-blue-50 shadow-sm ring-2 ring-blue-100'
+                            : 'border-line-200 bg-white hover:border-court-500 hover:bg-court-50'
+                        }`}
+                        key={playerId}
+                        type="button"
+                        onClick={() => onWinnerChange(match.id, { winnerId: playerId })}
+                        disabled={submittingWinnerId === match.id || actionId === match.id}
+                      >
+                        <p className="text-xs font-black uppercase tracking-[0.12em] text-court-700">
+                          Winner
+                        </p>
+                        <p className="mt-1 text-base font-black text-ink-900">
+                          {playerName}
+                        </p>
+                        {isSelected && (
+                          <p className="mt-2 text-xs font-bold text-court-700">
+                            Selected
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3">
                   <button
                     className="inline-flex items-center justify-center gap-2 rounded-full bg-court-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
                     type="submit"
-                    disabled={submittingScoreId === match.id || actionId === match.id}
+                    disabled={
+                      submittingWinnerId === match.id ||
+                      actionId === match.id ||
+                      !winnerDrafts[match.id]?.winnerId
+                    }
                   >
                     <CheckIcon />
-                    {submittingScoreId === match.id ? 'Submitting...' : 'Submit Score'}
+                    {submittingWinnerId === match.id ? 'Submitting...' : 'Submit Winner'}
                   </button>
                 </div>
               </form>
@@ -1302,7 +1391,7 @@ function CompletedMatchesSection({
       <SectionHeader
         icon={<CheckIcon />}
         title="Completed Matches"
-        description="Submitted scores are shown here after wins and losses are recorded."
+        description="Final winners are shown here after wins, losses, and ladder movement are recorded."
       />
       {matches.length === 0 ? (
         <EmptyState message="No completed matches yet." />
@@ -1318,11 +1407,8 @@ function CompletedMatchesSection({
                   <h3 className="font-bold text-ink-900">
                     {getMatchTitle(match, currentPlayer, playersById)}
                   </h3>
-                  <p className="mt-1 text-sm text-ink-700">
+                  <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900">
                     Winner: {getPlayerName(match.winner_id, currentPlayer, playersById)}
-                  </p>
-                  <p className="mt-1 text-sm text-ink-700">
-                    Score: <span className="font-bold">{match.score ?? 'Not recorded'}</span>
                   </p>
                 </div>
                 <StatusBadge label="Completed" />
@@ -1892,6 +1978,7 @@ function StatusBadge({ label }: { label: string }) {
     Scheduled: 'border-court-500 bg-court-700 text-white',
     Completed: 'border-court-500 bg-white text-court-700',
     Canceled: 'border-red-200 bg-red-50 text-red-700',
+    Expired: 'border-line-200 bg-slate-50 text-ink-700',
   };
 
   return (
@@ -2074,6 +2161,7 @@ function ChallengeCard({
   actionId,
   cancelingMatchId,
   currentPlayer,
+  hasOtherActiveMatch,
   match,
   playersById,
   proposalDrafts,
@@ -2120,7 +2208,7 @@ function ChallengeCard({
             className="inline-flex items-center justify-center gap-2 rounded-full bg-court-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
             type="button"
             onClick={onAccept}
-            disabled={actionId === match.id}
+            disabled={actionId === match.id || hasOtherActiveMatch}
           >
             <CheckIcon />
             Accept
@@ -2135,6 +2223,12 @@ function ChallengeCard({
             Decline
           </button>
         </div>
+      )}
+
+      {match.status === 'pending' && isOpponent && hasOtherActiveMatch && (
+        <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900">
+          {ACTIVE_MATCH_MESSAGE}
+        </p>
       )}
 
       {match.status === 'pending' && isChallenger && (
@@ -2235,23 +2329,41 @@ function MatchTimeline({ status }: { status: MatchStatus }) {
   );
 
   return (
-    <div className="rounded-2xl border border-line-200 bg-white px-4 py-3">
+    <div className="rounded-2xl border border-line-200 bg-white px-3 py-3 sm:px-4">
+      <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-ink-700">
+        Match Status
+      </p>
       <div className="grid gap-2 sm:grid-cols-5">
         {steps.map((step, index) => {
-          const isActive = index <= activeIndex;
+          const isComplete = index < activeIndex;
+          const isCurrent = index === activeIndex;
 
           return (
-            <div className="flex items-center gap-2" key={step.key}>
+            <div
+              aria-current={isCurrent ? 'step' : undefined}
+              className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 ${
+                isCurrent
+                  ? 'border-blue-300 bg-blue-50 shadow-sm ring-2 ring-blue-100'
+                  : isComplete
+                    ? 'border-court-100 bg-court-50'
+                    : 'border-line-200 bg-white'
+              }`}
+              key={step.key}
+            >
               <span
                 className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-black ${
-                  isActive ? 'bg-court-500 text-white' : 'bg-slate-100 text-ink-700'
+                  isCurrent
+                    ? 'bg-court-500 text-white'
+                    : isComplete
+                      ? 'bg-court-900 text-white'
+                      : 'bg-slate-100 text-ink-700'
                 }`}
               >
-                {index + 1}
+                {isComplete ? <CheckIcon /> : index + 1}
               </span>
               <span
                 className={`text-xs font-bold ${
-                  isActive ? 'text-ink-900' : 'text-ink-700'
+                  isCurrent ? 'text-ink-900' : isComplete ? 'text-court-900' : 'text-ink-700'
                 }`}
               >
                 {step.label}
@@ -2450,6 +2562,10 @@ function getStatusLabel(match: Match) {
 
   if (match.status === 'canceled') {
     return 'Canceled';
+  }
+
+  if (match.status === 'expired') {
+    return 'Expired';
   }
 
   if (match.status === 'scheduled') {

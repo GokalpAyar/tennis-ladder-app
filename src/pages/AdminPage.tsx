@@ -27,7 +27,8 @@ type MatchStatus =
   | 'declined'
   | 'scheduled'
   | 'completed'
-  | 'canceled';
+  | 'canceled'
+  | 'expired';
 
 type Match = {
   id: string;
@@ -153,6 +154,7 @@ function AdminPage() {
         scheduled: 0,
         completed: 0,
         canceled: 0,
+        expired: 0,
       },
     );
   }, [matches]);
@@ -830,6 +832,7 @@ function AdminPage() {
                     ['scheduled', 'Scheduled'],
                     ['completed', 'Completed'],
                     ['canceled', 'Canceled'],
+                    ['expired', 'Expired'],
                   ] as const).map(([filter, label]) => (
                     <button
                       className={`rounded-full px-4 py-2 text-sm font-black transition ${
@@ -892,6 +895,7 @@ function AdminPage() {
                         <option value="scheduled">Scheduled</option>
                         <option value="completed">Completed</option>
                         <option value="canceled">Canceled</option>
+                        <option value="expired">Expired</option>
                       </select>
                       <button
                         className="rounded-full border border-red-300 bg-white px-5 py-3 text-sm font-extrabold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1004,6 +1008,7 @@ function getMatchStatusLabel(status: MatchStatus) {
     scheduled: 'Scheduled',
     completed: 'Completed',
     canceled: 'Canceled',
+    expired: 'Expired',
   };
 
   return labels[status];

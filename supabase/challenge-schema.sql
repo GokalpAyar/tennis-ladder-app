@@ -63,7 +63,7 @@ drop constraint if exists matches_status_check;
 
 alter table public.matches
 add constraint matches_status_check
-check (status in ('pending', 'accepted', 'time_proposed', 'declined', 'scheduled', 'completed', 'canceled'));
+check (status in ('pending', 'accepted', 'time_proposed', 'declined', 'scheduled', 'completed', 'canceled', 'expired'));
 
 alter table public.matches
 drop constraint if exists matches_distinct_players_check;
@@ -147,6 +147,98 @@ create trigger enforce_challenge_rank_limit
 before insert on public.matches
 for each row
 execute function public.enforce_challenge_rank_limit();
+
+create or replace function public.enforce_one_active_match_per_player()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.status not in ('pending', 'accepted', 'time_proposed', 'scheduled') then
+    return new;
+  end if;
+
+  if exists (
+    select 1
+    from public.matches existing_match
+    where existing_match.status in ('pending', 'accepted', 'time_proposed', 'scheduled')
+      and (tg_op = 'INSERT' or existing_match.id <> new.id)
+      and (
+        existing_match.challenger_id = new.challenger_id
+        or existing_match.opponent_id = new.challenger_id
+        or existing_match.challenger_id = new.opponent_id
+        or existing_match.opponent_id = new.opponent_id
+      )
+  ) then
+    raise exception 'You already have an active match. Complete or cancel it before starting another.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_one_active_match_per_player on public.matches;
+
+create trigger enforce_one_active_match_per_player
+before insert or update of status, challenger_id, opponent_id on public.matches
+for each row
+execute function public.enforce_one_active_match_per_player();
+
+create or replace function public.enforce_no_overlapping_scheduled_matches()
+returns trigger
+language plpgsql
+as $$
+declare
+  new_match_start timestamptz;
+  new_match_end timestamptz;
+begin
+  if new.status <> 'scheduled' then
+    return new;
+  end if;
+
+  if new.proposed_match_at is null then
+    raise exception 'Scheduled matches must have a start time.';
+  end if;
+
+  new_match_start := new.proposed_match_at;
+  new_match_end := coalesce(
+    new.scheduled_match_ends_at,
+    new.proposed_match_at + interval '90 minutes'
+  );
+
+  if exists (
+    select 1
+    from public.matches existing_match
+    where existing_match.status = 'scheduled'
+      and (tg_op = 'INSERT' or existing_match.id <> new.id)
+      and existing_match.proposed_match_at is not null
+      and (
+        existing_match.challenger_id = new.challenger_id
+        or existing_match.opponent_id = new.challenger_id
+        or existing_match.challenger_id = new.opponent_id
+        or existing_match.opponent_id = new.opponent_id
+      )
+      and tstzrange(
+        existing_match.proposed_match_at,
+        coalesce(
+          existing_match.scheduled_match_ends_at,
+          existing_match.proposed_match_at + interval '90 minutes'
+        ),
+        '[)'
+      ) && tstzrange(new_match_start, new_match_end, '[)')
+  ) then
+    raise exception 'One player already has a match during this time.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_no_overlapping_scheduled_matches on public.matches;
+
+create trigger enforce_no_overlapping_scheduled_matches
+before insert or update of status, challenger_id, opponent_id, proposed_match_at, scheduled_match_ends_at on public.matches
+for each row
+execute function public.enforce_no_overlapping_scheduled_matches();
 
 create or replace function public.record_completed_match_stats()
 returns trigger
