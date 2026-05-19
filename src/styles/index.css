@@ -55,8 +55,8 @@
     position: relative;
     isolation: isolate;
     background:
-      linear-gradient(0deg, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0.38)),
-      url("/images/dashboard-bg.jpg") center top / cover fixed;
+      linear-gradient(0deg, rgb(255 255 255 / 0.66), rgb(255 255 255 / 0.74)),
+      url('/images/dashboard-bg.jpg') center center / cover no-repeat fixed;
   }
 
   .app-shell::before {
@@ -64,7 +64,7 @@
     position: fixed;
     inset: 0;
     z-index: -1;
-    background: rgb(255 255 255 / 0.03);
+    background: rgb(255 255 255 / 0.12);
     pointer-events: none;
   }
 
