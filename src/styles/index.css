@@ -55,7 +55,7 @@
     position: relative;
     isolation: isolate;
     background:
-      linear-gradient(0deg, rgb(255 255 255 / 0.78), rgb(255 255 255 / 0.84)),
+      linear-gradient(0deg, rgb(255 255 255 / 0.62), rgb(255 255 255 / 0.70)),
       url("/images/tennis-court.jpg") center top / cover fixed;
   }
 
@@ -64,9 +64,7 @@
     position: fixed;
     inset: 0;
     z-index: -1;
-    background:
-      linear-gradient(135deg, rgb(255 255 255 / 0.45), rgb(231 238 249 / 0.34)),
-      radial-gradient(circle at 10% 10%, rgb(239 68 68 / 0.04), transparent 18rem);
+    background: rgb(255 255 255 / 0.24);
     pointer-events: none;
   }
 
@@ -112,10 +110,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    background:
-      radial-gradient(circle at 92% 18%, rgb(37 99 235 / 0.10), transparent 14rem),
-      radial-gradient(circle at 12% 88%, rgb(239 68 68 / 0.06), transparent 12rem);
-    opacity: 1;
+    background: transparent;
     pointer-events: none;
   }
 
@@ -126,17 +121,15 @@
 
   .auth-shell {
     background:
-      linear-gradient(135deg, rgb(15 42 95 / 0.92), rgb(37 99 235 / 0.74)),
-      radial-gradient(circle at 18% 18%, rgb(239 68 68 / 0.35), transparent 18rem),
-      var(--color-court-50);
+      linear-gradient(0deg, rgb(255 255 255 / 0.40), rgb(255 255 255 / 0.52)),
+      url("/images/tennis-court.jpg") center / cover;
   }
 
   .login-shell {
     position: relative;
     isolation: isolate;
     background:
-      linear-gradient(135deg, rgb(15 42 95 / 0.88), rgb(15 42 95 / 0.58)),
-      linear-gradient(0deg, rgb(15 23 42 / 0.45), rgb(15 23 42 / 0.20)),
+      linear-gradient(0deg, rgb(255 255 255 / 0.36), rgb(255 255 255 / 0.46)),
       url("/images/tennis-court.jpg") center / cover;
   }
 
@@ -145,9 +138,7 @@
     position: absolute;
     inset: 0;
     z-index: 0;
-    background:
-      radial-gradient(circle at 18% 16%, rgb(239 68 68 / 0.18), transparent 18rem),
-      linear-gradient(90deg, rgb(15 42 95 / 0.28), transparent 55%);
+    background: rgb(255 255 255 / 0.10);
     pointer-events: none;
   }
 
@@ -163,9 +154,7 @@
     position: absolute;
     inset: 0;
     z-index: -1;
-    background:
-      radial-gradient(circle at 92% 12%, rgb(37 99 235 / 0.10), transparent 18rem),
-      radial-gradient(circle at 8% 86%, rgb(239 68 68 / 0.06), transparent 14rem);
+    background: transparent;
     pointer-events: none;
   }
 
