@@ -106,6 +106,9 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
   const [cancelingMatchId, setCancelingMatchId] = useState<string | null>(null);
   const [submittingScoreId, setSubmittingScoreId] = useState<string | null>(null);
   const [scoreDrafts, setScoreDrafts] = useState<Record<string, ScoreDraft>>({});
+  const [reschedulingMatchIds, setReschedulingMatchIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [profileStatus, setProfileStatus] = useState<'pending' | 'approved'>('approved');
   const [ladderView, setLadderView] = useState<'pyramid' | 'list'>(() => {
     if (typeof window === 'undefined') {
@@ -334,6 +337,16 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
       return;
     }
 
+    if (match.proposed_match_options.length > 0 || match.status === 'scheduled') {
+      const confirmed = window.confirm(
+        'Replace the previous proposed times with these new options?',
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
     const isChallenger = match.challenger_id === currentPlayer.id;
 
     setActionId(match.id);
@@ -360,6 +373,11 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
       return;
     }
 
+    setReschedulingMatchIds((current) => {
+      const next = new Set(current);
+      next.delete(match.id);
+      return next;
+    });
     setMessage('Match time options sent.');
     await loadChallengeData();
   }
@@ -457,37 +475,23 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
     await loadChallengeData();
   }
 
-  async function requestReschedule(match: Match) {
-    if (!currentPlayer) {
-      return;
-    }
-
-    setActionId(match.id);
-    setMessage('');
+  function requestReschedule(match: Match) {
     setErrorMessage('');
+    setMessage('');
+    setReschedulingMatchIds((current) => {
+      const next = new Set(current);
+      next.add(match.id);
+      return next;
+    });
+  }
 
-    const { error } = await supabase
-      .from('matches')
-      .update({
-        status: 'accepted',
-        proposed_match_at: null,
-        proposed_match_options: [],
-        scheduled_match_ends_at: null,
-        proposed_by_player_id: currentPlayer.id,
-        challenger_agreed_at: null,
-        opponent_agreed_at: null,
-      })
-      .eq('id', match.id);
-
-    setActionId(null);
-
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
-
-    setMessage('Reschedule requested. Propose a new match time when both players are ready.');
-    await loadChallengeData();
+  function cancelReschedule(matchId: string) {
+    setErrorMessage('');
+    setReschedulingMatchIds((current) => {
+      const next = new Set(current);
+      next.delete(matchId);
+      return next;
+    });
   }
 
   async function submitScore(match: Match, event: FormEvent<HTMLFormElement>) {
@@ -987,10 +991,15 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
         currentPlayer={currentPlayer}
         matches={scheduledMatches}
         playersById={playersById}
+        proposalDraftsByMatchId={timeProposalDrafts}
+        reschedulingMatchIds={reschedulingMatchIds}
         scoreDrafts={scoreDrafts}
         sectionClass={cardClass}
         submittingScoreId={submittingScoreId}
+        onCancelReschedule={cancelReschedule}
         onCancel={cancelMatch}
+        onProposalChange={updateTimeProposalDraft}
+        onProposeTime={proposeMatchTime}
         onRequestReschedule={requestReschedule}
         onScoreChange={updateScoreDraft}
         onSubmitScore={submitScore}
@@ -1070,10 +1079,19 @@ type ScheduledMatchesSectionProps = {
   currentPlayer: RankedPlayer;
   matches: Match[];
   playersById: Map<string, RankedPlayer>;
+  proposalDraftsByMatchId: Record<string, TimeProposalDraft[]>;
+  reschedulingMatchIds: Set<string>;
   scoreDrafts: Record<string, ScoreDraft>;
   sectionClass: string;
   submittingScoreId: string | null;
+  onCancelReschedule: (matchId: string) => void;
   onCancel: (match: Match) => void;
+  onProposalChange: (
+    matchId: string,
+    index: number,
+    nextDraft: Partial<TimeProposalDraft>,
+  ) => void;
+  onProposeTime: (match: Match, event: FormEvent<HTMLFormElement>) => void;
   onRequestReschedule: (match: Match) => void;
   onScoreChange: (matchId: string, nextDraft: Partial<ScoreDraft>) => void;
   onSubmitScore: (match: Match, event: FormEvent<HTMLFormElement>) => void;
@@ -1085,10 +1103,15 @@ function ScheduledMatchesSection({
   currentPlayer,
   matches,
   playersById,
+  proposalDraftsByMatchId,
+  reschedulingMatchIds,
   scoreDrafts,
   sectionClass,
   submittingScoreId,
+  onCancelReschedule,
   onCancel,
+  onProposalChange,
+  onProposeTime,
   onRequestReschedule,
   onScoreChange,
   onSubmitScore,
@@ -1109,6 +1132,11 @@ function ScheduledMatchesSection({
               className="rounded-2xl border border-line-200 bg-white p-4 shadow-sm sm:p-5"
               key={match.id}
             >
+              {(() => {
+                const isRequestingNewTimes = reschedulingMatchIds.has(match.id);
+
+                return (
+                  <>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
@@ -1126,6 +1154,44 @@ function ScheduledMatchesSection({
                 </div>
                 <StatusBadge label="Scheduled" />
               </div>
+              <p className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm font-bold text-court-900">
+                Match scheduled.
+              </p>
+              <ProposalSummary
+                isTimeProposer={false}
+                match={match}
+                onChooseTime={undefined}
+                opponentName={getOpponentName(match, currentPlayer, playersById)}
+                showActions={false}
+              />
+              {isRequestingNewTimes && (
+                <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-ink-900">New times requested</p>
+                      <p className="mt-1 text-sm text-ink-700">
+                        The scheduled time stays visible until you submit replacement options.
+                      </p>
+                    </div>
+                    <button
+                      className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
+                      type="button"
+                      onClick={() => onCancelReschedule(match.id)}
+                    >
+                      Back to Proposed Times
+                    </button>
+                  </div>
+                  <TimeProposalForm
+                    actionId={actionId}
+                    match={match}
+                    proposalDrafts={
+                      proposalDraftsByMatchId[match.id] ?? getDefaultTimeProposalDrafts()
+                    }
+                    onProposalChange={onProposalChange}
+                    onPropose={onProposeTime}
+                  />
+                </div>
+              )}
               <p className="mt-4 rounded-xl border border-court-100 bg-court-50 px-4 py-3 text-sm font-bold text-court-900">
                 After both players agree, call the tennis office to reserve the court.
               </p>
@@ -1186,10 +1252,10 @@ function ScheduledMatchesSection({
                   className="inline-flex items-center justify-center gap-2 rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
                   type="button"
                   onClick={() => onRequestReschedule(match)}
-                  disabled={actionId === match.id}
+                  disabled={actionId === match.id || isRequestingNewTimes}
                 >
                   <ClockIcon />
-                  Request New Time
+                  Request New Times
                 </button>
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-full border border-red-300 bg-white px-4 py-2.5 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1201,6 +1267,9 @@ function ScheduledMatchesSection({
                   {cancelingMatchId === match.id ? 'Canceling...' : 'Cancel Match'}
                 </button>
               </div>
+                  </>
+                );
+              })()}
             </div>
           ))}
         </div>
@@ -1828,6 +1897,166 @@ function StatusBadge({ label }: { label: string }) {
   );
 }
 
+function ProposalSummary({
+  actionId,
+  isTimeProposer,
+  match,
+  onChooseTime,
+  opponentName,
+  showActions,
+}: {
+  actionId?: string | null;
+  isTimeProposer: boolean;
+  match: Match;
+  onChooseTime?: (proposal: MatchTimeProposal) => void;
+  opponentName: string;
+  showActions: boolean;
+}) {
+  const hasProposedTimes = match.proposed_match_options.length > 0;
+  const turnMessage = getTimeProposalTurnMessage({
+    isTimeProposer,
+    match,
+    opponentName,
+  });
+
+  return (
+    <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-bold text-ink-900">Proposed times</p>
+          <p className="mt-1 text-sm font-semibold text-court-900">{turnMessage}</p>
+        </div>
+        <p className="text-xs font-semibold text-ink-700">
+          8:00 AM - 8:00 PM, exactly 1 hour 30 minutes
+        </p>
+      </div>
+
+      {!hasProposedTimes && (
+        <p className="mt-3 rounded-xl border border-dashed border-line-200 bg-white px-4 py-4 text-sm font-medium text-ink-700">
+          No proposed times are saved for this match yet.
+        </p>
+      )}
+
+      {hasProposedTimes ? (
+        <div className="mt-3 grid gap-2">
+          {match.proposed_match_options.map((proposal, index) => (
+            <div
+              className="flex flex-col gap-3 rounded-xl border border-line-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              key={proposal.id}
+            >
+              <div>
+                <p className="text-sm font-bold text-ink-900">
+                  Option {index + 1}: {formatProposalRange(proposal)}
+                </p>
+                {match.status === 'scheduled' &&
+                  proposal.startAt === match.proposed_match_at && (
+                    <p className="mt-1 text-xs font-bold text-court-700">
+                      Selected time
+                    </p>
+                  )}
+              </div>
+              {showActions && !isTimeProposer && onChooseTime && (
+                <button
+                  className="inline-flex items-center justify-center rounded-full bg-court-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  type="button"
+                  onClick={() => onChooseTime(proposal)}
+                  disabled={actionId === match.id}
+                >
+                  Confirm Time
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        match.status === 'scheduled' && (
+          <p className="mt-3 rounded-xl border border-line-200 bg-white px-3 py-3 text-sm font-bold text-ink-900">
+            Selected time: {formatScheduledMatchTime(match)}
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
+function TimeProposalForm({
+  actionId,
+  match,
+  proposalDrafts,
+  onProposalChange,
+  onPropose,
+}: {
+  actionId: string | null;
+  match: Match;
+  proposalDrafts: TimeProposalDraft[];
+  onProposalChange: (
+    matchId: string,
+    index: number,
+    nextDraft: Partial<TimeProposalDraft>,
+  ) => void;
+  onPropose: (match: Match, event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="mt-4 rounded-2xl border border-line-200 bg-white p-4" onSubmit={(event) => onPropose(match, event)}>
+      <div>
+        <p className="text-sm font-bold text-ink-900">Propose up to 3 match times</p>
+        <p className="mt-1 text-sm text-ink-700">
+          Select a date and one 90-minute club slot. Submitting new times replaces the previous proposed times.
+        </p>
+      </div>
+      <div className="mt-4 grid gap-3">
+        {proposalDrafts.map((proposal, index) => (
+          <div
+            className="grid gap-3 rounded-xl border border-line-200 bg-court-50/60 p-3 sm:grid-cols-[1fr_1.35fr]"
+            key={index}
+          >
+            <label className="block">
+              <span className="text-xs font-bold uppercase text-ink-700">
+                Date {index + 1}
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
+                type="date"
+                value={proposal.date}
+                onChange={(event) =>
+                  onProposalChange(match.id, index, { date: event.target.value })
+                }
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-bold uppercase text-ink-700">Time Slot</span>
+              <select
+                className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
+                value={proposal.slotId}
+                onChange={(event) =>
+                  onProposalChange(match.id, index, { slotId: event.target.value })
+                }
+              >
+                <option value="">Select a 90-minute slot</option>
+                {MATCH_TIME_SLOTS.map((slot) => (
+                  <option key={slot.id} value={slot.id}>
+                    {slot.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+        <button
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-court-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+          type="submit"
+          disabled={actionId === match.id}
+        >
+          <ClockIcon />
+          Send Options
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function ChallengeCard({
   actionId,
   cancelingMatchId,
@@ -1842,6 +2071,7 @@ function ChallengeCard({
   onCancel,
   onProposalChange,
 }: ChallengeCardProps) {
+  const [isRequestingNewTimes, setIsRequestingNewTimes] = useState(false);
   const isChallenger = match.challenger_id === currentPlayer.id;
   const isOpponent = match.opponent_id === currentPlayer.id;
   const statusLabel = getStatusLabel(match);
@@ -1851,6 +2081,8 @@ function ChallengeCard({
   const isCanceling = cancelingMatchId === match.id;
   const canCancel = CANCELABLE_MATCH_STATUSES.includes(match.status);
   const opponentName = getOpponentName(match, currentPlayer, playersById);
+  const hasProposedTimes = match.proposed_match_options.length > 0;
+  const shouldShowProposalForm = !hasProposedTimes || isRequestingNewTimes;
 
   return (
     <article className="rounded-2xl border border-line-200 bg-white p-4 shadow-sm sm:p-5">
@@ -1900,107 +2132,62 @@ function ChallengeCard({
 
       {isSchedulingMatch && (
         <div className="mt-4 space-y-4">
-          {match.proposed_match_options.length > 0 && (
+          {hasProposedTimes ? (
+            <ProposalSummary
+              actionId={actionId}
+              isTimeProposer={isTimeProposer}
+              match={match}
+              onChooseTime={onChooseTime}
+              opponentName={opponentName}
+              showActions
+            />
+          ) : (
+            <EmptyState message="No proposed times yet. Send up to 3 options to your opponent." />
+          )}
+
+          {hasProposedTimes && isRequestingNewTimes && (
             <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm font-bold text-ink-900">Time options</p>
-                <p className="text-xs font-semibold text-ink-700">
-                  8:00 AM - 8:00 PM, exactly 1 hour 30 minutes
-                </p>
-              </div>
-              <div className="mt-3 grid gap-2">
-                {match.proposed_match_options.map((proposal, index) => (
-                  <div
-                    className="flex flex-col gap-3 rounded-xl border border-line-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                    key={proposal.id}
-                  >
-                    <div>
-                      <p className="text-sm font-bold text-ink-900">
-                        Option {index + 1}: {formatProposalRange(proposal)}
-                      </p>
-                      <p className="mt-1 text-xs font-medium text-ink-700">
-                        {isTimeProposer
-                          ? `Waiting for ${opponentName} to choose.`
-                          : `Choose this time to schedule the match.`}
-                      </p>
-                    </div>
-                    {!isTimeProposer && (
-                      <button
-                        className="inline-flex items-center justify-center rounded-full bg-court-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        type="button"
-                        onClick={() => onChooseTime(proposal)}
-                        disabled={actionId === match.id}
-                      >
-                        Confirm Time
-                      </button>
-                    )}
-                  </div>
-                ))}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-ink-900">New times requested</p>
+                  <p className="mt-1 text-sm text-ink-700">
+                    Previous proposed times stay available until you submit replacements.
+                  </p>
+                </div>
+                <button
+                  className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
+                  type="button"
+                  onClick={() => setIsRequestingNewTimes(false)}
+                >
+                  Back to Proposed Times
+                </button>
               </div>
             </div>
           )}
 
-          <form className="rounded-2xl border border-line-200 bg-white p-4" onSubmit={onPropose}>
-            <div>
-              <p className="text-sm font-bold text-ink-900">
-                Propose up to 3 match times
-              </p>
-              <p className="mt-1 text-sm text-ink-700">
-                Select a date and one 90-minute club slot. After a time is selected, call the tennis office to reserve the court.
-              </p>
-            </div>
-            <div className="mt-4 grid gap-3">
-              {proposalDrafts.map((proposal, index) => (
-                <div
-                  className="grid gap-3 rounded-xl border border-line-200 bg-court-50/60 p-3 sm:grid-cols-[1fr_1.35fr]"
-                  key={index}
-                >
-                  <label className="block">
-                    <span className="text-xs font-bold uppercase text-ink-700">
-                      Date {index + 1}
-                    </span>
-                    <input
-                      className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
-                      type="date"
-                      value={proposal.date}
-                      onChange={(event) =>
-                        onProposalChange(index, { date: event.target.value })
-                      }
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-bold uppercase text-ink-700">
-                      Time Slot
-                    </span>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
-                      value={proposal.slotId}
-                      onChange={(event) =>
-                        onProposalChange(index, { slotId: event.target.value })
-                      }
-                    >
-                      <option value="">Select a 90-minute slot</option>
-                      {MATCH_TIME_SLOTS.map((slot) => (
-                        <option key={slot.id} value={slot.id}>
-                          {slot.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          {shouldShowProposalForm && (
+            <TimeProposalForm
+              actionId={actionId}
+              match={match}
+              proposalDrafts={proposalDrafts}
+              onProposalChange={(_, index, nextDraft) => onProposalChange(index, nextDraft)}
+              onPropose={(_, event) => onPropose(event)}
+            />
+          )}
+
+          {hasProposedTimes && !isRequestingNewTimes && (
+            <div className="flex flex-col gap-3 sm:flex-row">
               <button
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-court-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
-                type="submit"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
+                type="button"
+                onClick={() => setIsRequestingNewTimes(true)}
                 disabled={actionId === match.id}
               >
                 <ClockIcon />
-                Send Options
+                Request New Times
               </button>
             </div>
-          </form>
+          )}
         </div>
       )}
 
@@ -2269,6 +2456,30 @@ function getStatusLabel(match: Match) {
   }
 
   return 'Accepted';
+}
+
+function getTimeProposalTurnMessage({
+  isTimeProposer,
+  match,
+  opponentName,
+}: {
+  isTimeProposer: boolean;
+  match: Match;
+  opponentName: string;
+}) {
+  if (match.status === 'scheduled') {
+    return 'Match scheduled';
+  }
+
+  if (match.proposed_match_options.length === 0) {
+    return 'New times requested';
+  }
+
+  if (isTimeProposer) {
+    return `Waiting for ${opponentName} to choose a time`;
+  }
+
+  return 'Please choose one of the proposed times';
 }
 
 function formatSupabaseError(error: PostgrestError) {
