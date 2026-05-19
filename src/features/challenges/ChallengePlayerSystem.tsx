@@ -67,8 +67,7 @@ type MatchTimeProposal = {
 
 type TimeProposalDraft = {
   date: string;
-  startTime: string;
-  endTime: string;
+  slotId: string;
 };
 
 type ChallengePlayerSystemProps = {
@@ -78,6 +77,16 @@ type ChallengePlayerSystemProps = {
 
 const TOTAL_LADDER_POSITIONS = 50;
 const MAX_TIME_PROPOSALS = 3;
+const MATCH_TIME_SLOTS = [
+  { id: '08:00', label: '8:00 AM - 9:30 AM', startTime: '08:00', endTime: '09:30' },
+  { id: '09:30', label: '9:30 AM - 11:00 AM', startTime: '09:30', endTime: '11:00' },
+  { id: '11:00', label: '11:00 AM - 12:30 PM', startTime: '11:00', endTime: '12:30' },
+  { id: '12:30', label: '12:30 PM - 2:00 PM', startTime: '12:30', endTime: '14:00' },
+  { id: '14:00', label: '2:00 PM - 3:30 PM', startTime: '14:00', endTime: '15:30' },
+  { id: '15:30', label: '3:30 PM - 5:00 PM', startTime: '15:30', endTime: '17:00' },
+  { id: '17:00', label: '5:00 PM - 6:30 PM', startTime: '17:00', endTime: '18:30' },
+  { id: '18:30', label: '6:30 PM - 8:00 PM', startTime: '18:30', endTime: '20:00' },
+];
 const CANCELABLE_MATCH_STATUSES: MatchStatus[] = [
   'pending',
   'accepted',
@@ -1896,7 +1905,7 @@ function ChallengeCard({
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm font-bold text-ink-900">Time options</p>
                 <p className="text-xs font-semibold text-ink-700">
-                  8:00 AM - 8:00 PM, minimum 1 hour 30 minutes
+                  8:00 AM - 8:00 PM, exactly 1 hour 30 minutes
                 </p>
               </div>
               <div className="mt-3 grid gap-2">
@@ -1937,13 +1946,13 @@ function ChallengeCard({
                 Propose up to 3 match times
               </p>
               <p className="mt-1 text-sm text-ink-700">
-                Add date, start, and end time. After a time is selected, call the tennis office to reserve the court.
+                Select a date and one 90-minute club slot. After a time is selected, call the tennis office to reserve the court.
               </p>
             </div>
             <div className="mt-4 grid gap-3">
               {proposalDrafts.map((proposal, index) => (
                 <div
-                  className="grid gap-3 rounded-xl border border-line-200 bg-court-50/60 p-3 sm:grid-cols-[1.2fr_0.8fr_0.8fr]"
+                  className="grid gap-3 rounded-xl border border-line-200 bg-court-50/60 p-3 sm:grid-cols-[1fr_1.35fr]"
                   key={index}
                 >
                   <label className="block">
@@ -1961,33 +1970,22 @@ function ChallengeCard({
                   </label>
                   <label className="block">
                     <span className="text-xs font-bold uppercase text-ink-700">
-                      Start
+                      Time Slot
                     </span>
-                    <input
+                    <select
                       className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
-                      max="20:00"
-                      min="08:00"
-                      type="time"
-                      value={proposal.startTime}
+                      value={proposal.slotId}
                       onChange={(event) =>
-                        onProposalChange(index, { startTime: event.target.value })
+                        onProposalChange(index, { slotId: event.target.value })
                       }
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-bold uppercase text-ink-700">
-                      End
-                    </span>
-                    <input
-                      className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
-                      max="20:00"
-                      min="08:00"
-                      type="time"
-                      value={proposal.endTime}
-                      onChange={(event) =>
-                        onProposalChange(index, { endTime: event.target.value })
-                      }
-                    />
+                    >
+                      <option value="">Select a 90-minute slot</option>
+                      {MATCH_TIME_SLOTS.map((slot) => (
+                        <option key={slot.id} value={slot.id}>
+                          {slot.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
               ))}
@@ -2319,8 +2317,7 @@ function getPyramidRows(players: RankedPlayer[]) {
 function getDefaultTimeProposalDrafts(): TimeProposalDraft[] {
   return Array.from({ length: MAX_TIME_PROPOSALS }, () => ({
     date: '',
-    startTime: '',
-    endTime: '',
+    slotId: '',
   }));
 }
 
@@ -2330,24 +2327,35 @@ function buildTimeProposals(
   | { ok: true; proposals: MatchTimeProposal[] }
   | { ok: false; message: string } {
   const proposals: MatchTimeProposal[] = [];
+  const usedSlots = new Set<string>();
 
   for (let index = 0; index < drafts.length; index += 1) {
     const draft = drafts[index];
-    const hasAnyValue = draft.date || draft.startTime || draft.endTime;
+    const hasAnyValue = draft.date || draft.slotId;
 
     if (!hasAnyValue) {
       continue;
     }
 
-    if (!draft.date || !draft.startTime || !draft.endTime) {
+    if (!draft.date || !draft.slotId) {
       return {
         ok: false,
-        message: `Option ${index + 1}: please enter a date, start time, and end time.`,
+        message: `Option ${index + 1}: please select both a date and a time slot.`,
       };
     }
 
-    const start = new Date(`${draft.date}T${draft.startTime}`);
-    const end = new Date(`${draft.date}T${draft.endTime}`);
+    const slot = MATCH_TIME_SLOTS.find((timeSlot) => timeSlot.id === draft.slotId);
+
+    if (!slot) {
+      return {
+        ok: false,
+        message: `Option ${index + 1}: please select an available club time slot.`,
+      };
+    }
+
+    const start = new Date(`${draft.date}T${slot.startTime}`);
+    const end = new Date(`${draft.date}T${slot.endTime}`);
+    const proposalKey = `${draft.date}-${slot.id}`;
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       return {
@@ -2356,29 +2364,29 @@ function buildTimeProposals(
       };
     }
 
-    const startMinutes = start.getHours() * 60 + start.getMinutes();
-    const endMinutes = end.getHours() * 60 + end.getMinutes();
     const durationMinutes = (end.getTime() - start.getTime()) / 60_000;
 
-    if (startMinutes < 8 * 60 || endMinutes > 20 * 60) {
+    if (durationMinutes !== 90) {
       return {
         ok: false,
-        message: `Option ${index + 1}: match times must be between 8:00 AM and 8:00 PM.`,
+        message: `Option ${index + 1}: match slots must be exactly 1 hour 30 minutes.`,
       };
     }
 
-    if (durationMinutes < 90) {
+    if (usedSlots.has(proposalKey)) {
       return {
         ok: false,
-        message: `Option ${index + 1}: matches must be at least 1 hour 30 minutes.`,
+        message: `Option ${index + 1}: this date and time slot is already selected.`,
       };
     }
+
+    usedSlots.add(proposalKey);
 
     proposals.push({
-      id: `${draft.date}-${draft.startTime}-${draft.endTime}-${index}`,
+      id: proposalKey,
       date: draft.date,
-      startTime: draft.startTime,
-      endTime: draft.endTime,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
       startAt: start.toISOString(),
       endAt: end.toISOString(),
     });
