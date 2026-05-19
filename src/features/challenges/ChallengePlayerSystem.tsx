@@ -1636,7 +1636,7 @@ function PyramidLadder({
   }
 
   return (
-    <div className="overflow-hidden rounded-[2rem] border border-white/20 bg-gradient-to-br from-court-900 via-court-700 to-court-900 p-3 shadow-2xl shadow-court-900/20 sm:p-5">
+    <div className="ladder-pyramid-panel overflow-hidden rounded-[2rem] border border-white/20 p-3 shadow-2xl shadow-court-900/20 sm:p-5">
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h3 className="text-xl font-black tracking-tight text-white sm:text-2xl">

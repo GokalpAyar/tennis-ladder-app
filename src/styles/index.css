@@ -118,6 +118,45 @@
       var(--color-court-50);
   }
 
+  .login-shell {
+    position: relative;
+    isolation: isolate;
+    background:
+      linear-gradient(135deg, rgb(15 42 95 / 0.88), rgb(15 42 95 / 0.58)),
+      linear-gradient(0deg, rgb(15 23 42 / 0.45), rgb(15 23 42 / 0.20)),
+      url("/images/tennis-court.jpg") center / cover;
+  }
+
+  .login-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background:
+      radial-gradient(circle at 18% 16%, rgb(239 68 68 / 0.18), transparent 18rem),
+      linear-gradient(90deg, rgb(15 42 95 / 0.28), transparent 55%);
+    pointer-events: none;
+  }
+
+  .ladder-pyramid-panel {
+    position: relative;
+    isolation: isolate;
+    background:
+      linear-gradient(135deg, rgb(15 42 95 / 0.95), rgb(29 78 216 / 0.82)),
+      url("/images/tennis-court.jpg") center / cover;
+  }
+
+  .ladder-pyramid-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+      linear-gradient(135deg, rgb(15 42 95 / 0.74), rgb(29 78 216 / 0.55)),
+      rgb(15 42 95 / 0.30);
+    pointer-events: none;
+  }
+
   .form-input {
     width: 100%;
     border-radius: 0.9rem;

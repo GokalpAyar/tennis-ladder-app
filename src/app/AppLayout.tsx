@@ -25,13 +25,13 @@ function AppLayout({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 border-b border-white/10 bg-court-900 text-white shadow-sm">
         <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <Link className="flex items-center gap-3" to="/dashboard">
-            <span className="grid size-11 place-items-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-black/15 ring-1 ring-white/20">
+            <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-1.5 shadow-lg shadow-black/15 ring-1 ring-white/20">
               <img
                 alt=""
-                className="size-8 object-contain"
-                height="32"
+                className="h-full w-full object-contain"
+                height="44"
                 src="/logo.png"
-                width="32"
+                width="44"
               />
             </span>
             <span>
