@@ -9,7 +9,7 @@ function DashboardPage() {
   return (
     <AppLayout>
       <section className="mx-auto w-full max-w-[92rem] space-y-4 sm:space-y-5">
-        <header className="hero-panel rounded-[2rem] p-4 sm:p-5 lg:p-6">
+        <header className="hero-panel dashboard-hero rounded-[2rem] p-4 sm:p-5 lg:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-white/70">

@@ -25,8 +25,14 @@ function AppLayout({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 border-b border-white/10 bg-court-900 text-white shadow-sm">
         <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <Link className="flex items-center gap-3" to="/dashboard">
-            <span className="grid size-12 place-items-center rounded-2xl bg-white text-lime-300 shadow-lg shadow-black/15">
-              <TennisBallIcon />
+            <span className="grid size-11 place-items-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-black/15 ring-1 ring-white/20">
+              <img
+                alt=""
+                className="size-8 object-contain"
+                height="32"
+                src="/logo.png"
+                width="32"
+              />
             </span>
             <span>
               <span className="block text-xl font-black tracking-tight">
@@ -69,20 +75,6 @@ function AppLayout({ children }: { children: ReactNode }) {
         {children}
       </main>
     </div>
-  );
-}
-
-function TennisBallIcon() {
-  return (
-    <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
-      <path
-        d="M5 10c4.5.4 8.6-2.1 10-5M9 19c.9-4.8 4.7-8.2 10-8.8"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="2"
-      />
-    </svg>
   );
 }
 

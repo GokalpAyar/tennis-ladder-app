@@ -72,6 +72,28 @@
       inset 0 1px 0 rgb(255 255 255 / 0.16);
   }
 
+  .dashboard-hero {
+    background:
+      linear-gradient(135deg, rgb(15 42 95 / 0.90), rgb(29 78 216 / 0.74)),
+      linear-gradient(0deg, rgb(15 23 42 / 0.28), rgb(15 23 42 / 0.08)),
+      url("/images/dashboard-bg.jpg") center / cover;
+  }
+
+  .ladder-hero {
+    background:
+      linear-gradient(135deg, rgb(15 42 95 / 0.92), rgb(29 78 216 / 0.76)),
+      linear-gradient(0deg, rgb(15 23 42 / 0.30), rgb(15 23 42 / 0.10)),
+      url("/images/tennis-court.jpg") center / cover;
+  }
+
+  .ladder-hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgb(255 255 255 / 0.08);
+    pointer-events: none;
+  }
+
   .hero-panel::before {
     content: "";
     position: absolute;
@@ -86,7 +108,7 @@
 
   .hero-panel > * {
     position: relative;
-    z-index: 1;
+    z-index: 2;
   }
 
   .auth-shell {
