@@ -414,7 +414,7 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
       return;
     }
 
-    setMessage('Please call the tennis office to reserve the court for this agreed time.');
+    setMessage('Match scheduled. Please call the tennis office to reserve the court.');
     await loadChallengeData();
   }
 
@@ -1154,9 +1154,17 @@ function ScheduledMatchesSection({
                 </div>
                 <StatusBadge label="Scheduled" />
               </div>
-              <p className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm font-bold text-court-900">
-                Match scheduled.
-              </p>
+              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 shadow-sm">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
+                  Final Scheduled Time
+                </p>
+                <p className="mt-1 text-base font-black text-ink-900">
+                  {formatScheduledMatchTime(match)}
+                </p>
+                <p className="mt-2 text-sm font-bold text-court-900">
+                  Please call the tennis office to reserve the court.
+                </p>
+              </div>
               <ProposalSummary
                 isTimeProposer={false}
                 match={match}
@@ -1193,7 +1201,7 @@ function ScheduledMatchesSection({
                 </div>
               )}
               <p className="mt-4 rounded-xl border border-court-100 bg-court-50 px-4 py-3 text-sm font-bold text-court-900">
-                After both players agree, call the tennis office to reserve the court.
+                Please call the tennis office to reserve the court.
               </p>
               <form
                 className="mt-4 rounded-xl border border-line-200 bg-white p-4"
@@ -1941,7 +1949,11 @@ function ProposalSummary({
         <div className="mt-3 grid gap-2">
           {match.proposed_match_options.map((proposal, index) => (
             <div
-              className="flex flex-col gap-3 rounded-xl border border-line-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              className={`flex flex-col gap-3 rounded-xl border px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${
+                match.status === 'scheduled' && proposal.startAt === match.proposed_match_at
+                  ? 'border-blue-300 bg-blue-50 shadow-sm ring-2 ring-blue-100'
+                  : 'border-line-200 bg-white'
+              }`}
               key={proposal.id}
             >
               <div>
@@ -1962,7 +1974,7 @@ function ProposalSummary({
                   onClick={() => onChooseTime(proposal)}
                   disabled={actionId === match.id}
                 >
-                  Confirm Time
+                  {actionId === match.id ? 'Saving...' : 'Confirm Time'}
                 </button>
               )}
             </div>
@@ -2016,6 +2028,7 @@ function TimeProposalForm({
               </span>
               <input
                 className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
+                min={getTodayInputDate()}
                 type="date"
                 value={proposal.date}
                 onChange={(event) =>
@@ -2050,7 +2063,7 @@ function TimeProposalForm({
           disabled={actionId === match.id}
         >
           <ClockIcon />
-          Send Options
+          {actionId === match.id ? 'Saving...' : 'Send Options'}
         </button>
       </div>
     </form>
@@ -2576,11 +2589,19 @@ function buildTimeProposals(
     }
 
     const durationMinutes = (end.getTime() - start.getTime()) / 60_000;
+    const now = new Date();
 
     if (durationMinutes !== 90) {
       return {
         ok: false,
         message: `Option ${index + 1}: match slots must be exactly 1 hour 30 minutes.`,
+      };
+    }
+
+    if (start.getTime() <= now.getTime()) {
+      return {
+        ok: false,
+        message: `Option ${index + 1}: please select a future date and time.`,
       };
     }
 
@@ -2611,6 +2632,13 @@ function buildTimeProposals(
   }
 
   return { ok: true, proposals };
+}
+
+function getTodayInputDate() {
+  const today = new Date();
+  const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60_000);
+
+  return localDate.toISOString().slice(0, 10);
 }
 
 function formatProposalRange(proposal: MatchTimeProposal) {
