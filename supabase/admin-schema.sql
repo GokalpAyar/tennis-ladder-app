@@ -36,6 +36,8 @@ alter table public.matches
 add column if not exists cancel_reason text,
 add column if not exists canceled_at timestamptz,
 add column if not exists canceled_by uuid references public.profiles(id) on delete set null,
+add column if not exists proposed_match_options jsonb not null default '[]'::jsonb,
+add column if not exists scheduled_match_ends_at timestamptz,
 add column if not exists winner_id uuid references public.profiles(id) on delete set null,
 add column if not exists score text,
 add column if not exists stats_recorded boolean not null default false,

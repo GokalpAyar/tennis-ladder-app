@@ -23,7 +23,7 @@ function DashboardPage() {
               </p>
             </div>
             {profileStatus === 'approved' && (
-              <Link className="btn-primary w-full px-5 py-3 text-sm sm:w-auto" to="/ladder">
+              <Link className="btn-primary w-full text-sm sm:w-auto" to="/ladder">
                 View Full Ladder
               </Link>
             )}

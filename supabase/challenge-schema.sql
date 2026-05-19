@@ -44,6 +44,8 @@ add column if not exists challenger_id uuid references public.profiles(id) on de
 add column if not exists opponent_id uuid references public.profiles(id) on delete cascade,
 add column if not exists status text not null default 'pending',
 add column if not exists proposed_match_at timestamptz,
+add column if not exists proposed_match_options jsonb not null default '[]'::jsonb,
+add column if not exists scheduled_match_ends_at timestamptz,
 add column if not exists proposed_by_player_id uuid references public.profiles(id) on delete set null,
 add column if not exists challenger_agreed_at timestamptz,
 add column if not exists opponent_agreed_at timestamptz,
