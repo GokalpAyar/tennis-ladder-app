@@ -9,7 +9,7 @@ type Profile = {
   full_name: string | null;
   email?: string | null;
   role: ProfileRole | null;
-  status: 'pending' | 'approved' | null;
+  status: 'pending' | 'approved' | 'rejected' | null;
 };
 
 type LadderRanking = {
@@ -36,6 +36,10 @@ type Match = {
   opponent_id: string;
   status: MatchStatus;
   proposed_match_at: string | null;
+  scheduled_match_ends_at: string | null;
+  cancel_reason?: string | null;
+  canceled_at?: string | null;
+  winner_id?: string | null;
   created_at: string;
 };
 
@@ -45,7 +49,14 @@ type RankingDraft = {
   losses: number;
 };
 
-type AdminTab = 'players' | 'matches' | 'settings';
+type AdminTab =
+  | 'pending'
+  | 'approved'
+  | 'ladder'
+  | 'scheduled'
+  | 'active'
+  | 'completed'
+  | 'settings';
 type MatchFilter = 'all' | MatchStatus;
 
 function AdminPage() {
@@ -58,7 +69,7 @@ function AdminPage() {
   const [profileNameDrafts, setProfileNameDrafts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AdminTab>('players');
+  const [activeTab, setActiveTab] = useState<AdminTab>('pending');
   const [playerSearch, setPlayerSearch] = useState('');
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('all');
   const [message, setMessage] = useState('');
@@ -92,6 +103,24 @@ function AdminPage() {
       (profile) => profile.status === 'pending' && !rankedPlayerIds.has(profile.id),
     );
   }, [profiles, rankedPlayerIds]);
+
+  const approvedProfiles = useMemo(() => {
+    return profiles.filter((profile) => profile.status === 'approved');
+  }, [profiles]);
+
+  const activeChallengeMatches = useMemo(() => {
+    return matches.filter((match) =>
+      ['pending', 'accepted', 'time_proposed'].includes(match.status),
+    );
+  }, [matches]);
+
+  const scheduledMatches = useMemo(() => {
+    return matches.filter((match) => match.status === 'scheduled');
+  }, [matches]);
+
+  const completedMatches = useMemo(() => {
+    return matches.filter((match) => match.status === 'completed');
+  }, [matches]);
 
   const filteredRankings = useMemo(() => {
     const query = playerSearch.trim().toLowerCase();
@@ -159,6 +188,22 @@ function AdminPage() {
     );
   }, [matches]);
 
+  const visibleAdminMatches = useMemo(() => {
+    if (activeTab === 'scheduled') {
+      return scheduledMatches;
+    }
+
+    if (activeTab === 'active') {
+      return activeChallengeMatches;
+    }
+
+    if (activeTab === 'completed') {
+      return completedMatches;
+    }
+
+    return filteredMatches;
+  }, [activeChallengeMatches, activeTab, completedMatches, filteredMatches, scheduledMatches]);
+
   async function loadAdminData() {
     setIsLoading(true);
     setErrorMessage('');
@@ -175,7 +220,7 @@ function AdminPage() {
         .order('rank_position', { ascending: true }),
       supabase
         .from('matches')
-        .select('id, challenger_id, opponent_id, status, proposed_match_at, created_at')
+        .select('id, challenger_id, opponent_id, status, proposed_match_at, scheduled_match_ends_at, cancel_reason, canceled_at, winner_id, created_at')
         .order('created_at', { ascending: false }),
     ]);
 
@@ -303,6 +348,33 @@ function AdminPage() {
     await loadAdminData();
   }
 
+  async function rejectPlayer(profileId: string) {
+    const confirmed = window.confirm('Reject this pending registration?');
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionId(`reject-${profileId}`);
+    setMessage('');
+    setErrorMessage('');
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ status: 'rejected' })
+      .eq('id', profileId);
+
+    setActionId(null);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setMessage('Pending registration rejected.');
+    await loadAdminData();
+  }
+
   async function removePlayerFromLadder(playerId: string) {
     const confirmed = window.confirm('Remove this player from the ladder? Their profile will remain.');
 
@@ -366,6 +438,30 @@ function AdminPage() {
     }
 
     setMessage('Player and ranking updated.');
+    await loadAdminData();
+  }
+
+  async function saveProfileName(profileId: string) {
+    const rowActionId = `profile-${profileId}`;
+    const fullName = profileNameDrafts[profileId]?.trim() || null;
+
+    setActionId(rowActionId);
+    setMessage('');
+    setErrorMessage('');
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ full_name: fullName })
+      .eq('id', profileId);
+
+    setActionId(null);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setMessage('Player name updated.');
     await loadAdminData();
   }
 
@@ -522,7 +618,10 @@ function AdminPage() {
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link className="btn-secondary" to="/dashboard">
-                Player Dashboard
+                Preview Dashboard
+              </Link>
+              <Link className="btn-secondary" to="/ladder">
+                Preview Ladder
               </Link>
               <button
                 className="rounded-full border border-white/20 px-5 py-3 text-sm font-extrabold text-white transition hover:bg-white/10"
@@ -560,10 +659,14 @@ function AdminPage() {
               <AdminStatCard label="Matches" value={matches.length} />
             </section>
 
-            <nav className="grid gap-2 rounded-[1.5rem] border border-line-200 bg-white p-2 shadow-sm sm:grid-cols-3">
+            <nav className="grid gap-2 rounded-[1.5rem] border border-line-200 bg-white p-2 shadow-sm sm:grid-cols-2 lg:grid-cols-7">
               {([
-                ['players', 'Players & Rankings'],
-                ['matches', 'Matches'],
+                ['pending', 'Pending Players'],
+                ['approved', 'Approved Players'],
+                ['ladder', 'Ladder Rankings'],
+                ['scheduled', 'Scheduled Matches'],
+                ['active', 'Active Challenges'],
+                ['completed', 'Completed Matches'],
                 ['settings', 'Settings'],
               ] as const).map(([tab, label]) => (
                 <button
@@ -581,7 +684,160 @@ function AdminPage() {
               ))}
             </nav>
 
-            {activeTab === 'players' && (
+            {activeTab === 'pending' && (
+              <section className="rounded-[2rem] border border-line-200 bg-white p-5 shadow-sm sm:p-8">
+                <SectionHeader
+                  title="Pending Players"
+                  description="Approve new registrations, assign a starting rank, or reject requests that should not enter the ladder."
+                />
+                <div className="mt-5 grid gap-3">
+                  {pendingProfiles.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-line-200 bg-court-50 px-5 py-8 text-center text-sm font-medium text-ink-700">
+                      No registrations are pending approval.
+                    </p>
+                  ) : (
+                    pendingProfiles.map((profile) => {
+                      const approveKey = `approve-${profile.id}`;
+                      const rejectKey = `reject-${profile.id}`;
+
+                      return (
+                        <div
+                          className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm lg:grid-cols-[1fr_8rem_auto_auto] lg:items-end"
+                          key={profile.id}
+                        >
+                          <div>
+                            <p className="font-black text-ink-900">{getProfileName(profile)}</p>
+                            <p className="mt-1 text-sm text-ink-700">
+                              Email: {profile.email ?? 'Not stored'}
+                            </p>
+                            <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-court-700">
+                              Pending approval
+                            </p>
+                          </div>
+                          <NumberInput
+                            label="Start Rank"
+                            min={1}
+                            value={approvalRankDrafts[profile.id] ?? rankings.length + 1}
+                            onChange={(value) => updateApprovalRankDraft(profile.id, value)}
+                          />
+                          <button
+                            className="rounded-full bg-court-500 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            type="button"
+                            onClick={() => approvePlayer(profile.id)}
+                            disabled={actionId === approveKey}
+                          >
+                            {actionId === approveKey ? 'Approving...' : 'Approve'}
+                          </button>
+                          <button
+                            className="rounded-full border border-red-200 bg-white px-5 py-3 text-sm font-extrabold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            type="button"
+                            onClick={() => rejectPlayer(profile.id)}
+                            disabled={actionId === rejectKey}
+                          >
+                            {actionId === rejectKey ? 'Rejecting...' : 'Reject'}
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+            )}
+
+            {activeTab === 'approved' && (
+              <section className="rounded-[2rem] border border-line-200 bg-white p-5 shadow-sm sm:p-8">
+                <SectionHeader
+                  title="Approved Players"
+                  description="Edit player names, view email, change role, and add approved players to the ladder."
+                />
+                <div className="mt-5 grid gap-3">
+                  {approvedProfiles.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-line-200 bg-court-50 px-5 py-8 text-center text-sm font-medium text-ink-700">
+                      No approved players yet.
+                    </p>
+                  ) : (
+                    approvedProfiles.map((profile) => {
+                      const isRanked = rankedPlayerIds.has(profile.id);
+                      const saveKey = `profile-${profile.id}`;
+
+                      return (
+                        <div
+                          className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm lg:grid-cols-[1fr_minmax(14rem,1fr)_9rem_auto] lg:items-end"
+                          key={profile.id}
+                        >
+                          <div>
+                            <p className="font-black text-ink-900">{getProfileName(profile)}</p>
+                            <p className="mt-1 text-sm text-ink-700">
+                              Email: {profile.email ?? 'Not stored'}
+                            </p>
+                            <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-court-700">
+                              {isRanked ? 'On ladder' : 'Not ranked'}
+                            </p>
+                          </div>
+                          <label className="block">
+                            <span className="text-xs font-bold uppercase text-ink-700">
+                              Player Name
+                            </span>
+                            <input
+                              className="mt-1 w-full rounded-xl border border-line-200 bg-white px-4 py-3 text-sm font-semibold text-ink-900"
+                              value={profileNameDrafts[profile.id] ?? ''}
+                              onChange={(event) =>
+                                updateProfileNameDraft(profile.id, event.target.value)
+                              }
+                            />
+                          </label>
+                          <div>
+                            <p className="text-xs font-bold uppercase text-ink-700">Role</p>
+                            <select
+                              className="mt-1 w-full rounded-xl border border-line-200 bg-white px-3 py-3 text-sm font-semibold text-ink-900"
+                              value={profile.role ?? 'player'}
+                              onChange={(event) =>
+                                updateProfileRole(profile.id, event.target.value as ProfileRole)
+                              }
+                              disabled={actionId === profile.id}
+                            >
+                              <option value="player">Player</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          </div>
+                          <div className="grid gap-2">
+                            <button
+                              className="rounded-full bg-court-500 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+                              type="button"
+                              onClick={() => saveProfileName(profile.id)}
+                              disabled={actionId === saveKey}
+                            >
+                              {actionId === saveKey ? 'Saving...' : 'Save Name'}
+                            </button>
+                            {isRanked ? (
+                              <button
+                                className="rounded-full border border-red-200 bg-white px-5 py-3 text-sm font-extrabold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                type="button"
+                                onClick={() => removePlayerFromLadder(profile.id)}
+                                disabled={actionId === profile.id}
+                              >
+                                Remove from Ladder
+                              </button>
+                            ) : (
+                              <button
+                                className="rounded-full border border-line-200 bg-white px-5 py-3 text-sm font-extrabold text-court-900 transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                type="button"
+                                onClick={() => addPlayerToLadder(profile.id)}
+                                disabled={actionId === profile.id}
+                              >
+                                Add to Ladder
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+            )}
+
+            {activeTab === 'ladder' && (
             <section className="rounded-[2rem] border border-line-200 bg-white p-5 shadow-sm sm:p-8">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <SectionHeader
@@ -818,12 +1074,24 @@ function AdminPage() {
             </section>
             )}
 
-            {activeTab === 'matches' && (
+            {(activeTab === 'scheduled' || activeTab === 'active' || activeTab === 'completed') && (
             <section className="rounded-[2rem] border border-line-200 bg-white p-5 shadow-sm sm:p-8">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <SectionHeader
-                  title="Matches"
-                  description="Review pending, scheduled, completed, and canceled matches."
+                  title={
+                    activeTab === 'scheduled'
+                      ? 'Scheduled Matches'
+                      : activeTab === 'active'
+                        ? 'Active Challenges'
+                        : 'Completed Matches'
+                  }
+                  description={
+                    activeTab === 'scheduled'
+                      ? 'View scheduled match times, reservation reminders, and match status controls.'
+                      : activeTab === 'active'
+                        ? 'Review pending, accepted, and time-proposed challenges that are still in progress.'
+                        : 'Review completed matches and final winner records.'
+                  }
                 />
                 <div className="flex flex-wrap gap-2">
                   {([
@@ -856,12 +1124,12 @@ function AdminPage() {
                 <AdminStatusCard label="Canceled" value={matchStatusCounts.canceled} />
               </div>
               <div className="mt-5 space-y-3">
-                {filteredMatches.length === 0 ? (
+                {visibleAdminMatches.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-line-200 bg-court-50 px-5 py-6 text-center text-sm font-medium text-ink-700">
                     No matches match this view.
                   </p>
                 ) : (
-                  filteredMatches.map((match) => (
+                  visibleAdminMatches.map((match) => (
                     <div
                       className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm transition hover:border-court-500/70 lg:grid-cols-[1fr_auto_auto] lg:items-center"
                       key={match.id}
@@ -872,8 +1140,18 @@ function AdminPage() {
                           {getProfileName(profilesById.get(match.opponent_id))}
                         </p>
                         <p className="mt-1 text-sm text-ink-700">
-                          Proposed time: {formatDisplayDate(match.proposed_match_at)}
+                          Match time: {formatMatchWindow(match)}
                         </p>
+                        {match.status === 'scheduled' && (
+                          <p className="mt-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-bold text-court-900">
+                            Court Reservations: tenis@rotonpoint.org · 203-838-1606 ext. 101
+                          </p>
+                        )}
+                        {match.winner_id && (
+                          <p className="mt-2 text-sm font-bold text-ink-700">
+                            Winner: {getProfileName(profilesById.get(match.winner_id))}
+                          </p>
+                        )}
                         <p className="mt-2">
                           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black uppercase text-ink-700">
                             {getMatchStatusLabel(match.status)}
@@ -1117,6 +1395,25 @@ function formatDisplayDate(value: string | null) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
+}
+
+function formatMatchWindow(match: Match) {
+  if (!match.proposed_match_at) {
+    return 'No time selected';
+  }
+
+  const start = new Date(match.proposed_match_at);
+
+  if (!match.scheduled_match_ends_at) {
+    return formatDisplayDate(match.proposed_match_at);
+  }
+
+  const end = new Date(match.scheduled_match_ends_at);
+  const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(start);
+  const startTime = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(start);
+  const endTime = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(end);
+
+  return `${date}, ${startTime} - ${endTime}`;
 }
 
 export default AdminPage;

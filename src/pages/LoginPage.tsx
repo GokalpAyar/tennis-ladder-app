@@ -31,16 +31,27 @@ function LoginPage() {
 
   return (
     <main className="auth-shell login-shell grid min-h-screen place-items-center px-6 py-12 text-ink-900">
-      <section className="premium-card relative z-[1] w-full max-w-md rounded-[2rem] p-8 sm:p-10">
-        <p className="mb-3 text-sm font-black uppercase tracking-[0.18em] text-court-700">
+      <section className="premium-card relative z-[1] w-full max-w-md rounded-[2rem] p-8 text-center sm:p-10">
+        <div className="mx-auto flex size-24 items-center justify-center overflow-hidden rounded-[1.75rem] bg-white shadow-lg ring-1 ring-line-200 sm:size-28">
+          <img
+            alt="Roton Point logo"
+            className="block size-20 object-contain sm:size-24"
+            height="112"
+            src="/images/logo.png"
+            width="112"
+          />
+        </div>
+        <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight text-ink-900 sm:text-4xl">
           Roton Point Tennis Tournament Ladder
+        </h1>
+        <p className="mt-2 text-sm font-black uppercase tracking-[0.18em] text-court-700">
+          Club Challenge Portal
         </p>
-        <h1 className="text-4xl font-black leading-tight">Log in</h1>
-        <p className="mt-3 text-sm leading-6 text-ink-700">
+        <p className="mt-4 text-sm leading-6 text-ink-700">
           Enter the club ladder and manage your next challenge.
         </p>
         <form className="mt-8 space-y-5" onSubmit={handleLogin}>
-          <label className="block">
+          <label className="block text-left">
             <span className="text-sm font-medium text-ink-700">Email</span>
             <input
               className="form-input mt-2"
@@ -51,7 +62,7 @@ function LoginPage() {
               required
             />
           </label>
-          <label className="block">
+          <label className="block text-left">
             <span className="text-sm font-medium text-ink-700">Password</span>
             <input
               className="form-input mt-2"

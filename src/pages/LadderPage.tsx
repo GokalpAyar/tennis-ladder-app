@@ -4,7 +4,7 @@ import { useAuth } from '../app/AuthProvider';
 import ChallengePlayerSystem from '../features/challenges/ChallengePlayerSystem';
 
 function LadderPage() {
-  const { session } = useAuth();
+  const { role, session } = useAuth();
 
   return (
     <AppLayout>
@@ -32,7 +32,19 @@ function LadderPage() {
           </div>
         </header>
 
-        {session?.user.id && <ChallengePlayerSystem userId={session.user.id} variant="ladder" />}
+        {role === 'admin' && (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm font-bold text-court-900">
+            Player Preview Mode: ladder actions are disabled for unranked admin accounts.
+          </div>
+        )}
+
+        {session?.user.id && (
+          <ChallengePlayerSystem
+            adminPreview={role === 'admin'}
+            userId={session.user.id}
+            variant="ladder"
+          />
+        )}
       </section>
     </AppLayout>
   );

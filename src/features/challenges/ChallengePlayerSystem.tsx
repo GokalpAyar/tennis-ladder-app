@@ -77,6 +77,7 @@ type TimeProposalDraft = {
 
 type ChallengePlayerSystemProps = {
   userId: string;
+  adminPreview?: boolean;
   variant?: 'full' | 'dashboard' | 'ladder';
 };
 
@@ -101,7 +102,11 @@ const CANCELABLE_MATCH_STATUSES: MatchStatus[] = [
 const ACTIVE_MATCH_MESSAGE =
   'You already have an active match. Complete or cancel it before starting another.';
 
-function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSystemProps) {
+function ChallengePlayerSystem({
+  userId,
+  adminPreview = false,
+  variant = 'full',
+}: ChallengePlayerSystemProps) {
   const [currentPlayer, setCurrentPlayer] = useState<RankedPlayer | null>(null);
   const [players, setPlayers] = useState<RankedPlayer[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -257,19 +262,23 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
     setCurrentPlayer(nextCurrentPlayer ?? null);
     setPlayers(rankedPlayers);
 
-    if (!nextCurrentPlayer) {
+    if (!nextCurrentPlayer && !adminPreview) {
       setMatches([]);
       setIsLoading(false);
       return;
     }
 
-    const { data: matchRows, error: matchesError } = await supabase
+    const matchSelect = supabase
       .from('matches')
       .select(
         'id, challenger_id, opponent_id, status, proposed_match_at, proposed_match_options, scheduled_match_ends_at, proposed_by_player_id, challenger_agreed_at, opponent_agreed_at, cancel_reason, canceled_at, canceled_by, winner_id, stats_recorded, ranking_updated, created_at',
-      )
-      .or(`challenger_id.eq.${userId},opponent_id.eq.${userId}`)
-      .order('created_at', { ascending: false });
+      );
+
+    const { data: matchRows, error: matchesError } = await (adminPreview
+      ? matchSelect.order('created_at', { ascending: false })
+      : matchSelect
+          .or(`challenger_id.eq.${userId},opponent_id.eq.${userId}`)
+          .order('created_at', { ascending: false }));
 
     if (matchesError) {
       setErrorMessage(matchesError.message);
@@ -747,6 +756,112 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
           </div>
         )}
       </section>
+    );
+  }
+
+  if (!currentPlayer && adminPreview) {
+    const previewActiveMatches = matches.filter((match) =>
+      ['pending', 'accepted', 'time_proposed'].includes(match.status),
+    );
+    const previewScheduledMatches = matches.filter((match) => match.status === 'scheduled');
+
+    if (isLadder) {
+      return (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm font-bold text-court-900">
+            Player Preview Mode: you are viewing the ladder as an admin. Challenge
+            actions are disabled because this admin account is not ranked.
+          </div>
+          <div className="flex flex-col gap-3 rounded-2xl border border-line-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="px-2 text-sm font-bold text-ink-700">
+              Choose how you want to scan the ladder.
+            </p>
+            <div className="grid grid-cols-2 rounded-full bg-court-100 p-1">
+              <button
+                className={`rounded-full px-4 py-2 text-sm font-extrabold ${
+                  ladderView === 'pyramid'
+                    ? 'bg-court-900 text-white'
+                    : 'text-court-700 hover:bg-court-50'
+                }`}
+                type="button"
+                onClick={() => setLadderView('pyramid')}
+              >
+                Pyramid View
+              </button>
+              <button
+                className={`rounded-full px-4 py-2 text-sm font-extrabold ${
+                  ladderView === 'list'
+                    ? 'bg-court-900 text-white'
+                    : 'text-court-700 hover:bg-court-50'
+                }`}
+                type="button"
+                onClick={() => setLadderView('list')}
+              >
+                List View
+              </button>
+            </div>
+          </div>
+          {ladderView === 'pyramid' ? (
+            <FullLadderSection
+              actionId={actionId}
+              currentPlayer={null}
+              eligiblePlayerIds={new Set<string>()}
+              getBlockingMatchWith={getBlockingMatchWith}
+              onChallenge={sendChallenge}
+              players={players}
+              showActions={false}
+              showTable={false}
+            />
+          ) : (
+            <LadderListView currentPlayer={null} players={players} />
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className={isDashboard ? 'grid gap-4 lg:grid-cols-2' : 'space-y-6'}>
+        <section className={`${cardClass} lg:col-span-2`}>
+          <SectionHeader
+            icon={<AdminPreviewIcon />}
+            title="Player Preview Mode"
+            description="You are viewing the player experience as an admin. This account is not ranked, so challenge actions are disabled."
+          />
+        </section>
+
+        <section className={cardClass}>
+          <SectionHeader
+            icon={<TrophyIcon />}
+            title="My Ranking"
+            description="Admin preview accounts do not need a ladder ranking."
+          />
+          <p className="mt-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900">
+            No player ranking is required for admin access.
+          </p>
+        </section>
+
+        <section className={cardClass}>
+          <SectionHeader
+            icon={<PhoneIcon />}
+            title="Court Reservations"
+            description="Contact details shown to players after a match time is scheduled."
+          />
+          <CourtReservationsCard className="mt-5" />
+        </section>
+
+        <AdminPreviewMatchSection
+          matches={previewActiveMatches}
+          playersById={playersById}
+          sectionClass={cardClass}
+          title="Match Activity"
+        />
+        <AdminPreviewMatchSection
+          matches={previewScheduledMatches}
+          playersById={playersById}
+          sectionClass={cardClass}
+          title="Scheduled Matches"
+        />
+      </div>
     );
   }
 
@@ -1562,6 +1677,53 @@ function CourtReservationsCard({ className = '' }: { className?: string }) {
         </a>
       </div>
     </div>
+  );
+}
+
+function AdminPreviewMatchSection({
+  matches,
+  playersById,
+  sectionClass,
+  title,
+}: {
+  matches: Match[];
+  playersById: Map<string, RankedPlayer>;
+  sectionClass: string;
+  title: string;
+}) {
+  return (
+    <section className={sectionClass}>
+      <SectionHeader
+        icon={<MatchIcon />}
+        title={title}
+        description="Preview of what players see in this area."
+      />
+      {matches.length === 0 ? (
+        <EmptyState message={`No ${title.toLowerCase()} to preview.`} />
+      ) : (
+        <div className="mt-5 space-y-3">
+          {matches.slice(0, 5).map((match) => (
+            <article
+              className="rounded-2xl border border-line-200 bg-white p-4 shadow-sm"
+              key={match.id}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-black text-ink-900">
+                    {getPlayerName(match.challenger_id, null, playersById)} vs{' '}
+                    {getPlayerName(match.opponent_id, null, playersById)}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-ink-700">
+                    {formatScheduledMatchTime(match)}
+                  </p>
+                </div>
+                <StatusBadge label={getStatusLabel(match)} />
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2512,6 +2674,20 @@ function PhoneIcon() {
   );
 }
 
+function AdminPreviewIcon() {
+  return (
+    <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M12 3 5 6v5c0 4.6 2.9 8.4 7 10 4.1-1.6 7-5.4 7-10V6l-7-3Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path d="M9 12h6M12 9v6" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </svg>
+  );
+}
+
 function getMatchTitle(
   match: Match,
   currentPlayer: RankedPlayer,
@@ -2561,14 +2737,14 @@ function getCancelingPlayerName(
 
 function getPlayerName(
   playerId: string | null,
-  currentPlayer: RankedPlayer,
+  currentPlayer: RankedPlayer | null,
   playersById: Map<string, RankedPlayer>,
 ) {
   if (!playerId) {
     return 'Not selected';
   }
 
-  if (playerId === currentPlayer.id) {
+  if (currentPlayer && playerId === currentPlayer.id) {
     return currentPlayer.name;
   }
 

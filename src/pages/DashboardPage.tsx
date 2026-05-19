@@ -4,7 +4,7 @@ import { useAuth } from '../app/AuthProvider';
 import ChallengePlayerSystem from '../features/challenges/ChallengePlayerSystem';
 
 function DashboardPage() {
-  const { profileStatus, session } = useAuth();
+  const { profileStatus, role, session } = useAuth();
 
   return (
     <AppLayout>
@@ -44,7 +44,14 @@ function DashboardPage() {
           </div>
         </header>
 
-        {profileStatus === 'pending' ? (
+        {role === 'admin' && (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm font-bold text-court-900">
+            Player Preview Mode: admin tools remain available from the Admin
+            Control Center, and this preview does not require a ladder ranking.
+          </div>
+        )}
+
+        {profileStatus === 'pending' && role !== 'admin' ? (
           <section className="rounded-[2rem] border border-line-200 bg-white p-6 shadow-sm sm:p-8">
             <p className="text-sm font-black uppercase tracking-[0.14em] text-court-700">
               Registration Pending
@@ -58,7 +65,11 @@ function DashboardPage() {
             </p>
           </section>
         ) : session?.user.id ? (
-          <ChallengePlayerSystem userId={session.user.id} variant="dashboard" />
+          <ChallengePlayerSystem
+            adminPreview={role === 'admin'}
+            userId={session.user.id}
+            variant="dashboard"
+          />
         ) : null}
       </section>
     </AppLayout>

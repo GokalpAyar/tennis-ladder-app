@@ -23,22 +23,22 @@ function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="app-shell min-h-screen text-ink-900">
       <header className="sticky top-0 z-20 border-b border-white/10 bg-court-900 text-white shadow-sm">
-        <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-          <Link className="flex items-center gap-3.5" to="/dashboard">
-            <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-black/15 ring-1 ring-white/20 sm:size-16">
+        <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+          <Link className="flex items-center gap-4" to="/dashboard">
+            <span className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-black/15 ring-1 ring-white/20 sm:size-20">
               <img
                 alt=""
-                className="block size-11 object-contain sm:size-12"
-                height="56"
-                src="/logo.png"
-                width="56"
+                className="block size-14 object-contain sm:size-[4.5rem]"
+                height="72"
+                src="/images/logo.png"
+                width="72"
               />
             </span>
             <span>
-              <span className="hidden text-lg font-black leading-tight tracking-tight sm:block lg:text-xl">
+              <span className="hidden text-lg font-black leading-tight tracking-tight sm:block xl:text-2xl">
                 Roton Point Tennis Tournament Ladder
               </span>
-              <span className="block text-lg font-black leading-tight tracking-tight sm:hidden">
+              <span className="block text-xl font-black leading-tight tracking-tight sm:hidden">
                 Roton Point Ladder
               </span>
               <span className="block text-xs font-bold uppercase tracking-[0.18em] text-white/60">
