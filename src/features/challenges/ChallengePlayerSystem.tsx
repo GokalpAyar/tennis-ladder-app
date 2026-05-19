@@ -924,6 +924,17 @@ function ChallengePlayerSystem({ userId, variant = 'full' }: ChallengePlayerSyst
         </div>
       </section>
 
+      {isDashboard && (
+        <section className={cardClass}>
+          <SectionHeader
+            icon={<PhoneIcon />}
+            title="Court Reservations"
+            description="Use this contact when your match time is scheduled and ready to reserve."
+          />
+          <CourtReservationsCard className="mt-5" />
+        </section>
+      )}
+
       {!isDashboard && (
         <FullLadderSection
           currentPlayer={currentPlayer}
@@ -1214,6 +1225,7 @@ function ScheduledMatchesSection({
                 <p className="mt-2 text-sm font-bold text-court-900">
                   Please call the tennis office to reserve the court.
                 </p>
+                <CourtReservationsCard className="mt-3 bg-white/80" />
               </div>
               <ProposalSummary
                 isTimeProposer={false}
@@ -1250,9 +1262,6 @@ function ScheduledMatchesSection({
                   />
                 </div>
               )}
-              <p className="mt-4 rounded-xl border border-court-100 bg-court-50 px-4 py-3 text-sm font-bold text-court-900">
-                Please call the tennis office to reserve the court.
-              </p>
               <form
                 className="mt-4 rounded-xl border border-line-200 bg-white p-4"
                 onSubmit={(event) => onSubmitWinner(match, event)}
@@ -1524,6 +1533,34 @@ function EmptyState({ message }: { message: string }) {
   return (
     <div className="mt-5 rounded-lg border border-dashed border-line-200 bg-court-50 px-5 py-6 text-center text-sm font-medium text-ink-700">
       {message}
+    </div>
+  );
+}
+
+function CourtReservationsCard({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={`rounded-2xl border border-line-200 bg-white px-4 py-3 text-sm shadow-sm ${className}`}
+    >
+      <p className="font-black uppercase tracking-[0.14em] text-court-700">
+        Court Reservations
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <a
+          className="inline-flex items-center gap-2 rounded-xl border border-line-200 bg-white px-3 py-2 font-bold text-court-900 transition hover:border-court-500 hover:bg-court-50"
+          href="mailto:tenis@rotonpoint.org"
+        >
+          <MailIcon />
+          tenis@rotonpoint.org
+        </a>
+        <a
+          className="inline-flex items-center gap-2 rounded-xl border border-line-200 bg-white px-3 py-2 font-bold text-court-900 transition hover:border-court-500 hover:bg-court-50"
+          href="tel:2038381606"
+        >
+          <PhoneIcon />
+          203-838-1606 ext. 101
+        </a>
+      </div>
     </div>
   );
 }
@@ -2449,6 +2486,28 @@ function ClockIcon() {
     <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
       <path d="M12 8v4l3 2" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg aria-hidden="true" className="size-4 shrink-0" fill="none" viewBox="0 0 24 24">
+      <rect height="14" rx="2" stroke="currentColor" strokeWidth="2" width="18" x="3" y="5" />
+      <path d="m4 7 8 6 8-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg aria-hidden="true" className="size-4 shrink-0" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M8.5 5.5 10 9l-2 1.4a11 11 0 0 0 5.6 5.6L15 14l3.5 1.5v3A2.5 2.5 0 0 1 16 21 13 13 0 0 1 3 8a2.5 2.5 0 0 1 2.5-2.5h3Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
     </svg>
   );
 }

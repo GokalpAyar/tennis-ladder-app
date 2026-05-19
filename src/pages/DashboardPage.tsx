@@ -13,7 +13,7 @@ function DashboardPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-court-700">
-                Tennis Ladder
+                Roton Point Tennis Tournament Ladder
               </p>
               <h1 className="mt-1.5 max-w-3xl text-2xl font-black leading-tight tracking-tight text-ink-900 sm:text-3xl lg:text-4xl">
                 Dashboard

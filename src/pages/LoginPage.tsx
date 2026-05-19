@@ -33,7 +33,7 @@ function LoginPage() {
     <main className="auth-shell login-shell grid min-h-screen place-items-center px-6 py-12 text-ink-900">
       <section className="premium-card relative z-[1] w-full max-w-md rounded-[2rem] p-8 sm:p-10">
         <p className="mb-3 text-sm font-black uppercase tracking-[0.18em] text-court-700">
-          Tennis Ladder
+          Roton Point Tennis Tournament Ladder
         </p>
         <h1 className="text-4xl font-black leading-tight">Log in</h1>
         <p className="mt-3 text-sm leading-6 text-ink-700">
