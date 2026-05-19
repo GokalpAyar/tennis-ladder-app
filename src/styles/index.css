@@ -55,8 +55,8 @@
     position: relative;
     isolation: isolate;
     background:
-      linear-gradient(0deg, rgb(255 255 255 / 0.42), rgb(255 255 255 / 0.56)),
-      url("/images/tennis-court.jpg") center top / cover fixed;
+      linear-gradient(0deg, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0.38)),
+      url("/images/dashboard-bg.jpg") center top / cover fixed;
   }
 
   .app-shell::before {
@@ -64,7 +64,7 @@
     position: fixed;
     inset: 0;
     z-index: -1;
-    background: rgb(255 255 255 / 0.08);
+    background: rgb(255 255 255 / 0.03);
     pointer-events: none;
   }
 
@@ -147,7 +147,7 @@
     isolation: isolate;
     background:
       linear-gradient(0deg, rgb(255 255 255 / 0.62), rgb(255 255 255 / 0.74)),
-      url("/images/tennis-court.jpg") center / cover;
+      url("/images/tennis.jpg") center / cover;
   }
 
   .ladder-pyramid-panel::before {
