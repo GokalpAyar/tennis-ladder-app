@@ -44,8 +44,10 @@ function LoginPage() {
 
     setIsSendingReset(true);
 
+    const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/login`,
+      redirectTo: `${siteUrl.replace(/\/$/, '')}/login`,
     });
 
     setIsSendingReset(false);
