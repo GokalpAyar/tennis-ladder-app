@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 function ResetPasswordPage() {
@@ -7,8 +7,42 @@ function ResetPasswordPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [hasRecoverySession, setHasRecoverySession] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!isMounted) {
+        return;
+      }
+
+      setHasRecoverySession(Boolean(data.session));
+      setIsCheckingSession(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) {
+        return;
+      }
+
+      if (event === 'PASSWORD_RECOVERY' || session) {
+        setHasRecoverySession(true);
+      }
+
+      setIsCheckingSession(false);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   async function handlePasswordUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -25,6 +59,11 @@ function ResetPasswordPage() {
       return;
     }
 
+    if (!hasRecoverySession) {
+      setErrorMessage('This reset link is missing or expired. Please request a new password reset email.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     const { error } = await supabase.auth.updateUser({ password: newPassword });
@@ -36,10 +75,7 @@ function ResetPasswordPage() {
       return;
     }
 
-    setSuccessMessage('Password updated. You can now log in with your new password.');
-    window.setTimeout(() => {
-      navigate('/login', { replace: true });
-    }, 1600);
+    setSuccessMessage('Password updated successfully. You can now log in.');
   }
 
   return (
@@ -55,7 +91,7 @@ function ResetPasswordPage() {
           />
         </div>
         <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight text-ink-900">
-          Reset password
+          Reset Password
         </h1>
         <p className="mt-3 text-sm leading-6 text-ink-700">
           Enter a new password for your Roton Point ladder account.
@@ -97,17 +133,29 @@ function ResetPasswordPage() {
               {successMessage}
             </p>
           )}
+          {!isCheckingSession && !hasRecoverySession && !successMessage && (
+            <p className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-court-900">
+              Open this page from the password reset email so we can verify your reset session.
+            </p>
+          )}
 
-          <button className="btn-primary w-full" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Updating...' : 'Update password'}
+          <button
+            className="btn-primary w-full"
+            type="submit"
+            disabled={isSubmitting || isCheckingSession || !hasRecoverySession}
+          >
+            {isSubmitting ? 'Updating...' : isCheckingSession ? 'Checking link...' : 'Update password'}
           </button>
         </form>
 
         <p className="mt-6 text-sm text-ink-700">
-          Remembered your password?{' '}
-          <Link className="font-bold text-court-700 hover:text-court-500" to="/login">
+          <button
+            className="font-bold text-court-700 hover:text-court-500"
+            type="button"
+            onClick={() => navigate('/login', { replace: true })}
+          >
             Back to login
-          </Link>
+          </button>
         </p>
       </section>
     </main>
