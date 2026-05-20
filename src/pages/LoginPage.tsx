@@ -7,11 +7,15 @@ function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage('');
+    setResetMessage('');
     setIsSubmitting(true);
 
     const { error } = await supabase.auth.signInWithPassword({
@@ -27,6 +31,32 @@ function LoginPage() {
     }
 
     navigate('/dashboard', { replace: true });
+  }
+
+  async function handlePasswordReset() {
+    setErrorMessage('');
+    setResetMessage('');
+
+    if (!email.trim()) {
+      setErrorMessage('Enter your email address first.');
+      return;
+    }
+
+    setIsSendingReset(true);
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/login`,
+    });
+
+    setIsSendingReset(false);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setResetMessage('Password reset email sent. Please check your inbox.');
+    setShowForgotPassword(false);
   }
 
   return (
@@ -63,7 +93,20 @@ function LoginPage() {
             />
           </label>
           <label className="block text-left">
-            <span className="text-sm font-medium text-ink-700">Password</span>
+            <span className="flex items-center justify-between gap-3 text-sm font-medium text-ink-700">
+              <span>Password</span>
+              <button
+                className="text-xs font-bold text-court-700 transition hover:text-court-500"
+                type="button"
+                onClick={() => {
+                  setErrorMessage('');
+                  setResetMessage('');
+                  setShowForgotPassword((isVisible) => !isVisible);
+                }}
+              >
+                Forgot password?
+              </button>
+            </span>
             <input
               className="form-input mt-2"
               type="password"
@@ -73,9 +116,30 @@ function LoginPage() {
               required
             />
           </label>
+          {showForgotPassword && (
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-left">
+              <p className="text-sm font-bold text-ink-900">Reset your password</p>
+              <p className="mt-1 text-sm leading-6 text-ink-700">
+                Enter your email above, then send a reset link to your inbox.
+              </p>
+              <button
+                className="mt-3 inline-flex items-center justify-center rounded-full bg-court-900 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                onClick={handlePasswordReset}
+                disabled={isSendingReset}
+              >
+                {isSendingReset ? 'Sending...' : 'Send reset email'}
+              </button>
+            </div>
+          )}
           {errorMessage && (
             <p className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
               {errorMessage}
+            </p>
+          )}
+          {resetMessage && (
+            <p className="rounded-md border border-court-300 bg-court-50 px-4 py-3 text-sm font-medium text-court-800">
+              {resetMessage}
             </p>
           )}
           <button

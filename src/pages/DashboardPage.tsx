@@ -90,8 +90,8 @@ const approvalSteps = [
 
 const ladderRules = [
   'You may challenge up to 3 spots above your rank',
-  'Win against a higher-ranked player and you move up',
-  'Lose and you keep your position',
+  'If the lower-ranked challenger wins, both players switch positions',
+  'If the higher-ranked player wins, rankings stay the same',
   'One active match at a time',
 ];
 
