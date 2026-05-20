@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '../lib/supabase';
@@ -19,7 +19,8 @@ function AppLayout({ children }: { children: ReactNode }) {
   const navItems = [
     { label: 'Dashboard', to: '/dashboard' },
     { label: 'Ladder', to: '/ladder' },
-    ...(role === 'admin' ? [{ label: 'Admin', to: '/admin' }] : []),
+    { label: 'Activities', to: '/activities' },
+    { label: 'Court Info', to: '/court-info' },
   ];
 
   return (
@@ -49,7 +50,24 @@ function AppLayout({ children }: { children: ReactNode }) {
             </span>
           </Link>
 
-          <nav className="relative flex justify-end">
+          <nav className="relative flex flex-wrap items-center justify-end gap-2">
+            <div className="hidden items-center gap-1 rounded-2xl bg-white/10 p-1.5 lg:flex">
+              {navItems.map((item) => (
+                <NavLink
+                  className={({ isActive }) =>
+                    `shrink-0 rounded-full px-4 py-2.5 text-sm font-extrabold transition ${
+                      isActive
+                        ? 'bg-white text-court-900 shadow-sm'
+                        : 'text-white/80 hover:bg-white/15 hover:text-white'
+                    }`
+                  }
+                  key={item.to}
+                  to={item.to}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
             <button
               className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-white/15"
               type="button"
@@ -86,14 +104,16 @@ function AppLayout({ children }: { children: ReactNode }) {
                       {item.label === 'Dashboard' ? 'My Dashboard' : item.label}
                     </Link>
                   ))}
-                  <button
-                    className="block w-full rounded-xl px-4 py-3 text-left text-sm font-bold text-ink-500"
-                    type="button"
-                    role="menuitem"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Notifications
-                  </button>
+                  {role === 'admin' && (
+                    <Link
+                      className="block rounded-xl px-4 py-3 text-sm font-bold text-ink-900 transition hover:bg-court-50 hover:text-court-900"
+                      to="/admin"
+                      role="menuitem"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      Admin
+                    </Link>
+                  )}
                   <div className="mt-2 rounded-xl border border-line-200 bg-slate-50 px-4 py-3">
                     <p className="text-sm font-black text-ink-900">Contact / Court Info</p>
                     <a

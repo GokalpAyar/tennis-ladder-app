@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
 type Profile = {
@@ -78,7 +79,7 @@ type TimeProposalDraft = {
 type ChallengePlayerSystemProps = {
   userId: string;
   adminPreview?: boolean;
-  variant?: 'full' | 'dashboard' | 'ladder';
+  variant?: 'full' | 'dashboard' | 'ladder' | 'activities';
 };
 
 const TOTAL_LADDER_POSITIONS = 50;
@@ -133,6 +134,7 @@ function ChallengePlayerSystem({
   const [errorMessage, setErrorMessage] = useState('');
   const isDashboard = variant === 'dashboard';
   const isLadder = variant === 'ladder';
+  const isActivities = variant === 'activities';
   const cardClass = isDashboard
     ? 'premium-card rounded-[1.5rem] p-4 sm:p-5'
     : 'premium-card rounded-[1.75rem] p-5 sm:p-6';
@@ -994,6 +996,108 @@ function ChallengePlayerSystem({
     );
   }
 
+  if (isActivities) {
+    return (
+      <div className="space-y-5">
+        {(message || errorMessage) && (
+          <div
+            className={`whitespace-pre-line rounded-2xl border px-5 py-4 text-sm font-medium shadow-sm ${
+              errorMessage
+                ? 'border-red-300 bg-red-50 text-red-700'
+                : 'border-court-500 bg-court-100 text-court-700'
+            }`}
+            role={errorMessage ? 'alert' : 'status'}
+          >
+            {errorMessage || message}
+          </div>
+        )}
+
+        <section className={cardClass} id="match-activity">
+          <SectionHeader
+            icon={<MatchIcon />}
+            title="Match Activity"
+            description="Sent challenges, received challenges, accepted challenges, and time proposals."
+          />
+          {matchActivityMatches.length === 0 ? (
+            <EmptyState message="No match activity yet." />
+          ) : (
+            <div className="mt-5 space-y-4">
+              {matchActivityMatches.map((match) => (
+                <ChallengeCard
+                  actionId={actionId}
+                  cancelingMatchId={cancelingMatchId}
+                  currentPlayer={currentPlayer}
+                  hasOtherActiveMatch={hasActiveMatchExcluding(match.id)}
+                  key={match.id}
+                  match={match}
+                  playersById={playersById}
+                  proposalDrafts={timeProposalDrafts[match.id] ?? getDefaultTimeProposalDrafts()}
+                  onAccept={() => updateChallengeStatus(match.id, 'accepted')}
+                  onDecline={() => updateChallengeStatus(match.id, 'declined')}
+                  onPropose={(event) => proposeMatchTime(match, event)}
+                  onChooseTime={(proposal) => chooseMatchTime(match, proposal)}
+                  onCancel={() => cancelMatch(match)}
+                  onProposalChange={(index, nextDraft) =>
+                    updateTimeProposalDraft(match.id, index, nextDraft)
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <ScheduledMatchesSection
+          actionId={actionId}
+          cancelingMatchId={cancelingMatchId}
+          currentPlayer={currentPlayer}
+          matches={scheduledMatches}
+          playersById={playersById}
+          proposalDraftsByMatchId={timeProposalDrafts}
+          reschedulingMatchIds={reschedulingMatchIds}
+          winnerDrafts={winnerDrafts}
+          sectionClass={cardClass}
+          submittingWinnerId={submittingWinnerId}
+          onCancelReschedule={cancelReschedule}
+          onCancel={cancelMatch}
+          onProposalChange={updateTimeProposalDraft}
+          onProposeTime={proposeMatchTime}
+          onRequestReschedule={requestReschedule}
+          onSubmitWinner={submitWinner}
+          onWinnerChange={updateWinnerDraft}
+        />
+
+        <CompletedMatchesSection
+          currentPlayer={currentPlayer}
+          matches={completedMatches}
+          playersById={playersById}
+          sectionClass={cardClass}
+        />
+
+        <section className={cardClass}>
+          <SectionHeader
+            icon={<XIcon />}
+            title="Canceled Matches"
+            description="Canceled matches are kept here for reference and no longer block new challenges."
+          />
+          {canceledMatches.length === 0 ? (
+            <EmptyState message="No canceled matches." />
+          ) : (
+            <div className="mt-5 space-y-4">
+              {canceledMatches.map((match) => (
+                <CanceledMatchCard
+                  currentPlayer={currentPlayer}
+                  key={match.id}
+                  match={match}
+                  playersById={playersById}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className={isDashboard ? 'grid gap-4 lg:grid-cols-2' : 'space-y-6'}>
       {(message || errorMessage) && (
@@ -1039,14 +1143,19 @@ function ChallengePlayerSystem({
         </div>
       </section>
 
-      {isDashboard && (
-        <section className={cardClass}>
-          <SectionHeader
-            icon={<PhoneIcon />}
-            title="Court Reservations"
-            description="Use this contact when your match time is scheduled and ready to reserve."
-          />
-          <CourtReservationsCard className="mt-5" />
+      {isDashboard && hasActiveMatch && (
+        <section className={`${cardClass} lg:col-span-2`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-black text-ink-900">You have an active match.</p>
+              <p className="mt-1 text-sm text-ink-700">
+                Go to Activities to accept, schedule, cancel, or report a result.
+              </p>
+            </div>
+            <Link className="btn-primary text-sm" to="/activities">
+              Go to Activities
+            </Link>
+          </div>
         </section>
       )}
 
@@ -1126,6 +1235,7 @@ function ChallengePlayerSystem({
         )}
       </section>
 
+      {!isDashboard && (
       <section className={cardClass} id="match-activity">
         <SectionHeader
           icon={<MatchIcon />}
@@ -1159,7 +1269,9 @@ function ChallengePlayerSystem({
           </div>
         )}
       </section>
+      )}
 
+      {!isDashboard && (
       <ScheduledMatchesSection
         actionId={actionId}
         cancelingMatchId={cancelingMatchId}
@@ -1179,13 +1291,16 @@ function ChallengePlayerSystem({
         onSubmitWinner={submitWinner}
         onWinnerChange={updateWinnerDraft}
       />
+      )}
 
+      {!isDashboard && (
       <CompletedMatchesSection
         currentPlayer={currentPlayer}
         matches={completedMatches}
         playersById={playersById}
         sectionClass={cardClass}
       />
+      )}
 
       {!isDashboard && (
         <section className={cardClass}>
@@ -1503,6 +1618,41 @@ function CompletedMatchesSection({
         </div>
       )}
     </section>
+  );
+}
+
+function CanceledMatchCard({
+  currentPlayer,
+  match,
+  playersById,
+}: {
+  currentPlayer: RankedPlayer;
+  match: Match;
+  playersById: Map<string, RankedPlayer>;
+}) {
+  return (
+    <div className="rounded-lg border border-line-200 bg-white p-5 text-ink-700 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-bold text-ink-900">
+            {getMatchTitle(match, currentPlayer, playersById)}
+          </p>
+          <p className="mt-1 text-sm">
+            Previous time: {formatDisplayDate(match.proposed_match_at)}
+          </p>
+          <p className="mt-1 text-sm">
+            Canceled {formatDisplayDate(match.canceled_at)} by{' '}
+            {getCancelingPlayerName(match, currentPlayer, playersById)}.
+          </p>
+          {match.cancel_reason && (
+            <p className="mt-2 rounded-lg bg-court-50 px-3 py-2 text-sm">
+              Reason: {match.cancel_reason}
+            </p>
+          )}
+        </div>
+        <StatusBadge label="Canceled" />
+      </div>
+    </div>
   );
 }
 

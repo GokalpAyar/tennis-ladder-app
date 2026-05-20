@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
+import ActivitiesPage from '../pages/ActivitiesPage';
 import AdminLoginPage from '../pages/AdminLoginPage';
 import AdminPage from '../pages/AdminPage';
+import CourtInfoPage from '../pages/CourtInfoPage';
 import DashboardPage from '../pages/DashboardPage';
 import LadderPage from '../pages/LadderPage';
 import LoginPage from '../pages/LoginPage';
@@ -92,6 +94,22 @@ function App() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/activities"
+        element={
+          <ProtectedRoute>
+            <ActivitiesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/court-info"
+        element={
+          <ProtectedRoute>
+            <CourtInfoPage />
           </ProtectedRoute>
         }
       />

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import AppLayout from '../app/AppLayout';
 import { useAuth } from '../app/AuthProvider';
 import ChallengePlayerSystem from '../features/challenges/ChallengePlayerSystem';
@@ -36,21 +35,6 @@ function DashboardPage() {
                   >
                     {showApprovedGuide ? 'Hide Guide' : 'How It Works'}
                   </button>
-                  <a
-                    className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
-                    href="#match-activity"
-                  >
-                    Match Activity
-                  </a>
-                  <a
-                    className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
-                    href="#scheduled-matches"
-                  >
-                    Scheduled Matches
-                  </a>
-                  <Link className="btn-primary w-full text-sm sm:w-auto" to="/ladder">
-                    Full Ladder
-                  </Link>
                 </div>
               </div>
             </header>
