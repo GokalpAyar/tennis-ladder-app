@@ -1,4 +1,4 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '../lib/supabase';
@@ -6,9 +6,11 @@ import { supabase } from '../lib/supabase';
 function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { role } = useAuth();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   async function handleLogout() {
+    setIsMenuOpen(false);
     setIsLoggingOut(true);
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
@@ -47,30 +49,78 @@ function AppLayout({ children }: { children: ReactNode }) {
             </span>
           </Link>
 
-          <nav className="flex items-center gap-2 overflow-x-auto rounded-2xl bg-white/10 p-1.5 lg:overflow-visible">
-            {navItems.map((item) => (
-              <NavLink
-                className={({ isActive }) =>
-                  `shrink-0 rounded-full px-4 py-2.5 text-sm font-extrabold transition ${
-                    isActive
-                      ? 'bg-white text-court-900 shadow-sm'
-                      : 'text-white/80 hover:bg-white/15 hover:text-white'
-                  }`
-                }
-                key={item.to}
-                to={item.to}
-              >
-                {item.label}
-              </NavLink>
-            ))}
+          <nav className="relative flex justify-end">
             <button
-              className="shrink-0 rounded-full border border-white/20 px-4 py-2.5 text-sm font-extrabold text-white transition hover:border-lime-300 hover:bg-lime-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-white/15"
               type="button"
-              onClick={handleLogout}
-              disabled={isLoggingOut}
+              aria-expanded={isMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => setIsMenuOpen((current) => !current)}
             >
-              {isLoggingOut ? 'Logging out...' : 'Logout'}
+              <MenuIcon />
+              <span className="sm:hidden">Menu</span>
+              <span className="hidden sm:inline">Account Menu</span>
             </button>
+
+            {isMenuOpen && (
+              <div
+                className="absolute right-0 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line-200 bg-white text-ink-900 shadow-xl"
+                role="menu"
+              >
+                <div className="border-b border-line-200 px-4 py-3">
+                  <p className="text-sm font-black">Account Menu</p>
+                  <p className="mt-1 text-xs font-semibold text-ink-700">
+                    Quick links and court information.
+                  </p>
+                </div>
+
+                <div className="p-2">
+                  {navItems.map((item) => (
+                    <Link
+                      className="block rounded-xl px-4 py-3 text-sm font-bold text-ink-900 transition hover:bg-court-50 hover:text-court-900"
+                      key={item.to}
+                      to={item.to}
+                      role="menuitem"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      {item.label === 'Dashboard' ? 'My Dashboard' : item.label}
+                    </Link>
+                  ))}
+                  <button
+                    className="block w-full rounded-xl px-4 py-3 text-left text-sm font-bold text-ink-500"
+                    type="button"
+                    role="menuitem"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    Notifications
+                  </button>
+                  <div className="mt-2 rounded-xl border border-line-200 bg-slate-50 px-4 py-3">
+                    <p className="text-sm font-black text-ink-900">Contact / Court Info</p>
+                    <a
+                      className="mt-2 block text-sm font-bold text-court-800 hover:text-court-600"
+                      href="mailto:tenis@rotonpoint.org"
+                    >
+                      tenis@rotonpoint.org
+                    </a>
+                    <a
+                      className="mt-1 block text-sm font-bold text-court-800 hover:text-court-600"
+                      href="tel:2038381606"
+                    >
+                      203-838-1606 ext. 101
+                    </a>
+                  </div>
+                  <button
+                    className="mt-2 block w-full rounded-xl px-4 py-3 text-left text-sm font-black text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    type="button"
+                    role="menuitem"
+                    onClick={handleLogout}
+                    disabled={isLoggingOut}
+                  >
+                    {isLoggingOut ? 'Logging out...' : 'Logout'}
+                  </button>
+                </div>
+              </div>
+            )}
           </nav>
         </div>
       </header>
@@ -91,6 +141,19 @@ function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </footer>
     </div>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M4 7h16M4 12h16M4 17h16"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </svg>
   );
 }
 
