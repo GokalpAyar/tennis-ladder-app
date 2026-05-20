@@ -1099,21 +1099,31 @@ function ChallengePlayerSystem({
   }
 
   return (
-    <div className={isDashboard ? 'grid gap-4 lg:grid-cols-2' : 'space-y-6'}>
+    <div
+      className={
+        isDashboard
+          ? 'grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(18rem,0.85fr)] md:items-start'
+          : 'space-y-6'
+      }
+    >
       {(message || errorMessage) && (
         <div
           className={`whitespace-pre-line rounded-2xl border px-5 py-4 text-sm font-medium shadow-sm ${
             errorMessage
               ? 'border-red-300 bg-red-50 text-red-700'
               : 'border-court-500 bg-court-100 text-court-700'
-          } ${isDashboard ? 'lg:col-span-2' : ''}`}
+          } ${
+            isDashboard
+              ? 'md:fixed md:right-6 md:top-28 md:z-50 md:max-w-sm md:px-4 md:py-3'
+              : ''
+          }`}
           role={errorMessage ? 'alert' : 'status'}
         >
           {errorMessage || message}
         </div>
       )}
 
-      <section className={cardClass}>
+      <section className={`${cardClass} ${isDashboard ? 'md:col-start-1 md:row-start-1 md:h-full' : ''}`}>
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-4">
             <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-court-900 text-lime-300">
@@ -1144,16 +1154,44 @@ function ChallengePlayerSystem({
       </section>
 
       {isDashboard && hasActiveMatch && (
-        <section className={`${cardClass} lg:col-span-2`}>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <section className={`${cardClass} md:col-start-2 md:row-start-1 md:h-full`}>
+          <div className="flex flex-col gap-3">
             <div>
-              <p className="text-sm font-black text-ink-900">You have an active match.</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
+                Active Match Summary
+              </p>
+              <p className="mt-2 text-lg font-black text-ink-900">You have an active match.</p>
               <p className="mt-1 text-sm text-ink-700">
                 Go to Activities to accept, schedule, cancel, or report a result.
               </p>
             </div>
-            <Link className="btn-primary text-sm" to="/activities">
+            <Link className="btn-primary w-full text-sm" to="/activities">
               Go to Activities
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {isDashboard && !hasActiveMatch && (
+        <section className={`${cardClass} hidden md:col-start-2 md:row-start-1 md:block md:h-full`}>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
+            Quick Actions
+          </p>
+          <h2 className="mt-2 text-xl font-black tracking-tight text-ink-900">
+            No active match right now
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-ink-700">
+            After you send or receive a challenge, use Activities to manage the match.
+          </p>
+          <div className="mt-5 grid gap-2">
+            <Link className="btn-primary w-full text-sm" to="/activities">
+              Go to Activities
+            </Link>
+            <Link
+              className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
+              to="/court-info"
+            >
+              Court Info
             </Link>
           </div>
         </section>
@@ -1170,20 +1208,20 @@ function ChallengePlayerSystem({
         />
       )}
 
-      <section className={cardClass}>
+      <section className={`${cardClass} ${isDashboard ? 'md:col-start-1 md:row-start-2' : ''}`}>
         <SectionHeader
           icon={<TargetIcon />}
           title="Eligible Players to Challenge"
           description={
             hasActiveMatch
-              ? ACTIVE_MATCH_MESSAGE
+              ? 'Active match in progress.'
               : currentPlayer.rankPosition === 1
                 ? 'Rank 1 cannot challenge anyone.'
                 : 'Only players ranked up to 3 spots above you are available.'
           }
         />
         {hasActiveMatch && (
-          <p className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900">
+          <p className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900 md:hidden">
             {ACTIVE_MATCH_MESSAGE}
           </p>
         )}
