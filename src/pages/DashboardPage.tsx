@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import AppLayout from '../app/AppLayout';
 import { useAuth } from '../app/AuthProvider';
@@ -5,6 +6,7 @@ import ChallengePlayerSystem from '../features/challenges/ChallengePlayerSystem'
 
 function DashboardPage() {
   const { profileStatus, role, session } = useAuth();
+  const [showApprovedGuide, setShowApprovedGuide] = useState(false);
 
   return (
     <AppLayout>
@@ -27,6 +29,13 @@ function DashboardPage() {
                   </p>
                 </div>
                 <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                  <button
+                    className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
+                    type="button"
+                    onClick={() => setShowApprovedGuide((isVisible) => !isVisible)}
+                  >
+                    {showApprovedGuide ? 'Hide Guide' : 'How It Works'}
+                  </button>
                   <a
                     className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
                     href="#match-activity"
@@ -45,6 +54,8 @@ function DashboardPage() {
                 </div>
               </div>
             </header>
+
+            {showApprovedGuide && <ApprovedPlayerGuide />}
 
             {role === 'admin' && (
               <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm font-bold text-court-900">
@@ -82,6 +93,15 @@ const ladderRules = [
   'Win against a higher-ranked player and you move up',
   'Lose and you keep your position',
   'One active match at a time',
+];
+
+const approvedGuideSteps = [
+  'Review your current rank',
+  'Choose an eligible player up to 3 spots above you',
+  'Send a challenge',
+  'Agree on one of the proposed match times',
+  'Call the tennis office to reserve a court',
+  'Play your match and report the winner',
 ];
 
 function PendingApprovalGuide() {
@@ -159,17 +179,7 @@ function PendingApprovalGuide() {
                 className="flex gap-3 rounded-2xl border border-line-200 bg-white px-4 py-3 text-sm font-semibold text-ink-800 shadow-sm"
                 key={rule}
               >
-                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-court-900">
-                  <svg aria-hidden="true" className="size-3" fill="none" viewBox="0 0 24 24">
-                    <path
-                      d="m5 12 4 4L19 6"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="3"
-                    />
-                  </svg>
-                </span>
+                <CheckDot />
                 <span>{rule}</span>
               </div>
             ))}
@@ -203,6 +213,75 @@ function PendingApprovalGuide() {
         </section>
       </div>
     </div>
+  );
+}
+
+function ApprovedPlayerGuide() {
+  return (
+    <section className="premium-card rounded-[2rem] p-5 sm:p-7">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-court-700">
+            Player Guide
+          </p>
+          <h2 className="mt-2 text-2xl font-black tracking-tight text-ink-900">
+            How to use the ladder
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-ink-700">
+            Follow these steps when you are ready to challenge, schedule, and
+            complete a match.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900">
+          Court Reservations: tenis@rotonpoint.org - 203-838-1606 ext. 101
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {approvedGuideSteps.map((step, index) => (
+          <article
+            className="rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm"
+            key={step}
+          >
+            <div className="flex size-9 items-center justify-center rounded-full bg-court-900 text-sm font-black text-white">
+              {index + 1}
+            </div>
+            <p className="mt-3 text-xs font-black uppercase tracking-[0.14em] text-court-700">
+              Step {index + 1}
+            </p>
+            <p className="mt-1 text-sm font-black leading-6 text-ink-900">{step}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-4">
+        {ladderRules.map((rule) => (
+          <div
+            className="flex gap-3 rounded-2xl border border-line-200 bg-white px-4 py-3 text-sm font-semibold text-ink-800 shadow-sm"
+            key={rule}
+          >
+            <CheckDot />
+            <span>{rule}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CheckDot() {
+  return (
+    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-court-900">
+      <svg aria-hidden="true" className="size-3" fill="none" viewBox="0 0 24 24">
+        <path
+          d="m5 12 4 4L19 6"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="3"
+        />
+      </svg>
+    </span>
   );
 }
 
