@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
+import { createNotification } from '../../lib/notifications';
 import { supabase } from '../../lib/supabase';
 
 type Profile = {
@@ -325,6 +326,12 @@ function ChallengePlayerSystem({
     }
 
     setMessage('Challenge sent.');
+    await createNotification({
+      userId: opponentId,
+      title: 'New challenge received',
+      message: `${currentPlayer.name} challenged you to a ladder match.`,
+      type: 'challenge',
+    });
     await loadChallengeData();
   }
 
@@ -348,6 +355,19 @@ function ChallengePlayerSystem({
     }
 
     setMessage(status === 'accepted' ? 'Challenge accepted.' : 'Challenge declined.');
+    const updatedMatch = matches.find((match) => match.id === matchId);
+
+    if (updatedMatch && currentPlayer) {
+      await createNotification({
+        userId: updatedMatch.challenger_id,
+        title: status === 'accepted' ? 'Challenge accepted' : 'Challenge declined',
+        message:
+          status === 'accepted'
+            ? `${currentPlayer.name} accepted your challenge. You can now propose match times.`
+            : `${currentPlayer.name} declined your challenge.`,
+        type: 'challenge',
+      });
+    }
     await loadChallengeData();
   }
 
@@ -407,6 +427,12 @@ function ChallengePlayerSystem({
       return next;
     });
     setMessage('Match time options sent.');
+    await createNotification({
+      userId: getOtherPlayerId(match, currentPlayer.id),
+      title: 'New match times proposed',
+      message: `${currentPlayer.name} proposed match time options. Please choose one.`,
+      type: 'schedule',
+    });
     await loadChallengeData();
   }
 
@@ -457,6 +483,12 @@ function ChallengePlayerSystem({
     }
 
     setMessage('Match scheduled. Please call the tennis office to reserve the court.');
+    await createNotification({
+      userId: getOtherPlayerId(match, currentPlayer.id),
+      title: 'Match scheduled',
+      message: `${currentPlayer.name} selected a match time. Please call the tennis office to reserve the court.`,
+      type: 'schedule',
+    });
     await loadChallengeData();
   }
 
@@ -553,6 +585,14 @@ function ChallengePlayerSystem({
     }
 
     setMessage('Match canceled.');
+    await createNotification({
+      userId: getOtherPlayerId(match, currentPlayer.id),
+      title: 'Match canceled',
+      message: `${currentPlayer.name} canceled your ladder match${
+        cancelReason ? `: ${cancelReason}` : '.'
+      }`,
+      type: 'match',
+    });
     await loadChallengeData();
   }
 
@@ -671,6 +711,12 @@ function ChallengePlayerSystem({
       return nextDrafts;
     });
     setMessage(`Winner submitted: ${winnerName}. Records updated and ladder movement checked.`);
+    await createNotification({
+      userId: getOtherPlayerId(match, currentPlayer.id),
+      title: 'Match result submitted',
+      message: `Winner submitted: ${winnerName}. Records and ladder movement were checked.`,
+      type: 'result',
+    });
     await loadChallengeData();
   }
 
@@ -2698,6 +2744,10 @@ function getMatchTitle(
   const otherPlayer = playersById.get(otherPlayerId);
 
   return otherPlayer ? `Match with ${otherPlayer.name}` : 'Match';
+}
+
+function getOtherPlayerId(match: Match, currentPlayerId: string) {
+  return match.challenger_id === currentPlayerId ? match.opponent_id : match.challenger_id;
 }
 
 function getOpponentName(

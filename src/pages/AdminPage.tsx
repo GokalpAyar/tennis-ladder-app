@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { createNotification } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 
 type ProfileRole = 'player' | 'admin';
@@ -345,6 +346,12 @@ function AdminPage() {
     }
 
     setMessage('Player approved and added to the ladder.');
+    await createNotification({
+      userId: profileId,
+      title: 'Registration approved',
+      message: `Your account was approved and your starting ladder rank is #${rankPosition}.`,
+      type: 'admin',
+    });
     await loadAdminData();
   }
 
@@ -521,6 +528,26 @@ function AdminPage() {
     }
 
     setMessage('Match status updated.');
+    if (status === 'canceled') {
+      const match = matches.find((matchRow) => matchRow.id === matchId);
+
+      if (match) {
+        await Promise.all([
+          createNotification({
+            userId: match.challenger_id,
+            title: 'Match canceled by admin',
+            message: 'An admin canceled your ladder match.',
+            type: 'match',
+          }),
+          createNotification({
+            userId: match.opponent_id,
+            title: 'Match canceled by admin',
+            message: 'An admin canceled your ladder match.',
+            type: 'match',
+          }),
+        ]);
+      }
+    }
     await loadAdminData();
   }
 
