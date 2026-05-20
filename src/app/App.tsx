@@ -6,6 +6,7 @@ import AdminPage from '../pages/AdminPage';
 import DashboardPage from '../pages/DashboardPage';
 import LadderPage from '../pages/LadderPage';
 import LoginPage from '../pages/LoginPage';
+import ResetPasswordPage from '../pages/ResetPasswordPage';
 import SignUpPage from '../pages/SignUpPage';
 
 function PublicRoute({ children }: { children: ReactNode }) {
@@ -77,6 +78,7 @@ function App() {
         }
       />
       <Route path="/admin-login" element={<AdminLoginPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/signup"
         element={
