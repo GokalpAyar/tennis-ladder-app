@@ -67,7 +67,7 @@ function LoginPage() {
             alt="Roton Point logo"
             className="block size-20 object-contain sm:size-24"
             height="112"
-            src="/images/logo.png"
+            src="/images/logo1.png"
             width="112"
           />
         </div>

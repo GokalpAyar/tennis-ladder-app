@@ -1,12 +1,11 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
 import { useAuth } from './AuthProvider';
-import NotificationBell from '../features/notifications/NotificationBell';
 import { supabase } from '../lib/supabase';
 
 function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const { role, session } = useAuth();
+  const { role } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   async function handleLogout() {
@@ -31,7 +30,7 @@ function AppLayout({ children }: { children: ReactNode }) {
                 alt=""
                 className="block size-14 object-contain sm:size-[4.5rem]"
                 height="72"
-                src="/images/logo.png"
+                src="/images/logo1.png"
                 width="72"
               />
             </span>
@@ -64,7 +63,6 @@ function AppLayout({ children }: { children: ReactNode }) {
                 {item.label}
               </NavLink>
             ))}
-            {session?.user.id && <NotificationBell userId={session.user.id} />}
             <button
               className="shrink-0 rounded-full border border-white/20 px-4 py-2.5 text-sm font-extrabold text-white transition hover:border-lime-300 hover:bg-lime-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
               type="button"
