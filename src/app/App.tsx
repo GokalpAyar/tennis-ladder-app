@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
+import AccountPage from '../pages/AccountPage';
 import ActivitiesPage from '../pages/ActivitiesPage';
 import AdminLoginPage from '../pages/AdminLoginPage';
 import AdminPage from '../pages/AdminPage';
@@ -94,6 +95,14 @@ function App() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account"
+        element={
+          <ProtectedRoute>
+            <AccountPage />
           </ProtectedRoute>
         }
       />

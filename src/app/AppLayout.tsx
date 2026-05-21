@@ -115,6 +115,14 @@ function AppLayout({ children }: { children: ReactNode }) {
                       Admin
                     </Link>
                   )}
+                  <Link
+                    className="block rounded-xl px-4 py-3 text-sm font-bold text-ink-900 transition hover:bg-court-50 hover:text-court-900"
+                    to="/account"
+                    role="menuitem"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    Account / Profile
+                  </Link>
                   <div className="mt-2 rounded-xl border border-line-200 bg-slate-50 px-4 py-3">
                     <p className="text-sm font-black text-ink-900">Contact / Court Info</p>
                     <a
