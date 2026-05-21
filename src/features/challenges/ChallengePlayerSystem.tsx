@@ -356,7 +356,8 @@ function ChallengePlayerSystem({
   async function proposeMatchTime(match: Match, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!currentPlayer) {
+    if (!isCurrentUserMatchPlayer(match, userId)) {
+      setErrorMessage('Only players in this match can propose times.');
       return;
     }
 
@@ -377,7 +378,7 @@ function ChallengePlayerSystem({
       }
     }
 
-    const isChallenger = match.challenger_id === currentPlayer.id;
+    const isChallenger = match.challenger_id === userId;
 
     setActionId(match.id);
     setMessage('');
@@ -389,7 +390,7 @@ function ChallengePlayerSystem({
         status: 'time_proposed',
         proposed_match_at: proposalResult.proposals[0].startAt,
         proposed_match_options: proposalResult.proposals,
-        proposed_by_player_id: currentPlayer.id,
+        proposed_by_player_id: userId,
         challenger_agreed_at: isChallenger ? new Date().toISOString() : null,
         opponent_agreed_at: isChallenger ? null : new Date().toISOString(),
         scheduled_match_ends_at: null,
@@ -413,11 +414,16 @@ function ChallengePlayerSystem({
   }
 
   async function chooseMatchTime(match: Match, proposal: MatchTimeProposal) {
-    if (!currentPlayer || !proposal.startAt || !proposal.endAt) {
+    if (!proposal.startAt || !proposal.endAt) {
       return;
     }
 
-    if (match.proposed_by_player_id === currentPlayer.id) {
+    if (!isCurrentUserMatchPlayer(match, userId)) {
+      setErrorMessage('Only players in this match can confirm a time.');
+      return;
+    }
+
+    if (match.proposed_by_player_id === userId) {
       setErrorMessage('Waiting for your opponent to choose one of the proposed times.');
       return;
     }
@@ -559,6 +565,11 @@ function ChallengePlayerSystem({
   }
 
   function requestReschedule(match: Match) {
+    if (!isCurrentUserMatchPlayer(match, userId)) {
+      setErrorMessage('Only players in this match can request new times.');
+      return;
+    }
+
     setErrorMessage('');
     setMessage('');
     setReschedulingMatchIds((current) => {
@@ -2523,9 +2534,11 @@ function ChallengeCard({
   const [isRequestingNewTimes, setIsRequestingNewTimes] = useState(false);
   const isChallenger = match.challenger_id === currentPlayer.id;
   const isOpponent = match.opponent_id === currentPlayer.id;
+  const canManageTimeProposals = isChallenger || isOpponent;
   const statusLabel = getStatusLabel(match);
   const isSchedulingMatch =
-    match.status === 'accepted' || match.status === 'time_proposed';
+    canManageTimeProposals &&
+    (match.status === 'accepted' || match.status === 'time_proposed');
   const isTimeProposer = match.proposed_by_player_id === currentPlayer.id;
   const isCanceling = cancelingMatchId === match.id;
   const canCancel = CANCELABLE_MATCH_STATUSES.includes(match.status);
@@ -2620,7 +2633,7 @@ function ChallengeCard({
             </div>
           )}
 
-          {shouldShowProposalForm && (
+          {canManageTimeProposals && shouldShowProposalForm && (
             <TimeProposalForm
               actionId={actionId}
               match={match}
@@ -2630,7 +2643,7 @@ function ChallengeCard({
             />
           )}
 
-          {hasProposedTimes && !isRequestingNewTimes && (
+          {canManageTimeProposals && hasProposedTimes && !isRequestingNewTimes && (
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
@@ -2886,6 +2899,10 @@ function getMatchTitle(
   const otherPlayer = playersById.get(otherPlayerId);
 
   return otherPlayer ? `Match with ${otherPlayer.name}` : 'Match';
+}
+
+function isCurrentUserMatchPlayer(match: Match, currentUserId: string) {
+  return match.challenger_id === currentUserId || match.opponent_id === currentUserId;
 }
 
 function getOpponentName(
