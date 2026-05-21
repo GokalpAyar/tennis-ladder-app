@@ -1,12 +1,16 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAuth } from './AuthProvider';
+import { useNotifications } from './NotificationsProvider';
 import { supabase } from '../lib/supabase';
 
 function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { profileStatus, role } = useAuth();
+  const { addNotification, markAllRead, notifications, unreadCount } = useNotifications();
+  const previousProfileStatus = useRef(profileStatus);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   async function handleLogout() {
@@ -15,6 +19,14 @@ function AppLayout({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
   }
+
+  useEffect(() => {
+    if (previousProfileStatus.current === 'pending' && profileStatus === 'approved') {
+      addNotification('Player approved', 'Your ladder account is ready.');
+    }
+
+    previousProfileStatus.current = profileStatus;
+  }, [addNotification, profileStatus]);
 
   const navItems = [
     { label: 'Dashboard', to: '/dashboard' },
@@ -70,16 +82,63 @@ function AppLayout({ children }: { children: ReactNode }) {
               ))}
             </div>
             <button
+              className="relative inline-flex size-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white shadow-sm transition hover:bg-white/15"
+              type="button"
+              aria-label="Notifications"
+              onClick={() => {
+                setIsNotificationsOpen((current) => !current);
+                setIsMenuOpen(false);
+                markAllRead();
+              }}
+            >
+              <BellIcon />
+              {unreadCount > 0 && (
+                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-red-500 text-[0.65rem] font-black text-white">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+            <button
               className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-white/15"
               type="button"
               aria-expanded={isMenuOpen}
               aria-haspopup="menu"
-              onClick={() => setIsMenuOpen((current) => !current)}
+              onClick={() => {
+                setIsMenuOpen((current) => !current);
+                setIsNotificationsOpen(false);
+              }}
             >
               <MenuIcon />
               <span className="sm:hidden">Menu</span>
               <span className="hidden sm:inline">Account Menu</span>
             </button>
+
+            {isNotificationsOpen && (
+              <div className="absolute right-0 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line-200 bg-white text-ink-900 shadow-xl">
+                <div className="border-b border-line-200 px-4 py-3">
+                  <p className="text-sm font-black">Notifications</p>
+                </div>
+                <div className="max-h-80 overflow-y-auto p-2">
+                  {notifications.length === 0 ? (
+                    <p className="px-4 py-5 text-sm font-semibold text-ink-600">
+                      No notifications yet.
+                    </p>
+                  ) : (
+                    notifications.map((notification) => (
+                      <div
+                        className="rounded-xl px-4 py-3 text-sm hover:bg-court-50"
+                        key={notification.id}
+                      >
+                        <p className="font-black text-ink-900">{notification.title}</p>
+                        <p className="mt-1 font-semibold text-ink-700">
+                          {notification.message}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
             {isMenuOpen && (
               <div
@@ -178,6 +237,26 @@ function MenuIcon() {
     <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24">
       <path
         d="M4 7h16M4 12h16M4 17h16"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M10 21h4"
         stroke="currentColor"
         strokeLinecap="round"
         strokeWidth="2"

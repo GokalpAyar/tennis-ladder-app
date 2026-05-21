@@ -74,6 +74,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!session?.user.id) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`profile-updates-${session.user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${session.user.id}`,
+        },
+        (payload) => {
+          const nextProfile = payload.new as {
+            role?: string | null;
+            status?: string | null;
+          };
+
+          setRole(nextProfile.role === 'admin' ? 'admin' : 'player');
+          setProfileStatus(nextProfile.status === 'approved' ? 'approved' : 'pending');
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session?.user.id]);
+
   const value = useMemo(
     () => ({
       isLoading,
