@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import type { User } from '@supabase/supabase-js';
 import AppLayout from '../app/AppLayout';
 import { useAuth } from '../app/AuthProvider';
 import { supabase } from '../lib/supabase';
@@ -41,23 +42,20 @@ function AccountPage() {
     let isMounted = true;
 
     async function loadAccount() {
-      if (!userId) {
+      if (!session?.user) {
         return;
       }
 
       setIsLoading(true);
       setErrorMessage('');
 
-      const [profileResult, rankingResult] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('full_name, email, status')
-          .eq('id', userId)
-          .maybeSingle(),
+      const profileResult = await ensureProfile(session.user);
+
+      const [rankingResult] = await Promise.all([
         supabase
           .from('ladder_rankings')
           .select('rank_position, wins, losses')
-          .eq('player_id', userId)
+          .eq('player_id', session.user.id)
           .maybeSingle(),
       ]);
 
@@ -87,7 +85,7 @@ function AccountPage() {
     return () => {
       isMounted = false;
     };
-  }, [userId]);
+  }, [session?.user]);
 
   async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -113,13 +111,18 @@ function AccountPage() {
       .update({ full_name: trimmedName })
       .eq('id', userId)
       .select('full_name, email, status')
-      .single();
+      .maybeSingle();
 
     setIsSavingProfile(false);
 
     if (error) {
       console.error('Profile update error:', error);
       setErrorMessage(formatSupabaseError(error));
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage('Profile update did not return a profile. Please refresh and try again.');
       return;
     }
 
@@ -330,6 +333,41 @@ function AccountPage() {
       </section>
     </AppLayout>
   );
+}
+
+async function ensureProfile(user: User) {
+  const profileResult = await supabase
+    .from('profiles')
+    .select('full_name, email, status')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profileResult.error || profileResult.data) {
+    return profileResult;
+  }
+
+  const fallbackName =
+    typeof user.user_metadata.full_name === 'string' && user.user_metadata.full_name.trim()
+      ? user.user_metadata.full_name.trim()
+      : user.email ?? '';
+
+  const createResult = await supabase
+    .from('profiles')
+    .insert({
+      email: user.email ?? null,
+      full_name: fallbackName,
+      id: user.id,
+      role: 'player',
+      status: 'pending',
+    })
+    .select('full_name, email, status')
+    .maybeSingle();
+
+  if (createResult.error) {
+    console.error('Account profile creation error:', createResult.error);
+  }
+
+  return createResult;
 }
 
 function AccountStat({ label, value }: { label: string; value: string }) {
