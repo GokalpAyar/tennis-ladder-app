@@ -22,6 +22,7 @@ function AppLayout({ children }: { children: ReactNode }) {
     { label: 'Activities', to: '/activities' },
     { label: 'Court Info', to: '/court-info' },
   ];
+  const desktopNavItems = [{ label: 'Dashboard', to: '/dashboard' }];
 
   return (
     <div className="app-shell min-h-screen text-ink-900">
@@ -52,7 +53,7 @@ function AppLayout({ children }: { children: ReactNode }) {
 
           <nav className="relative flex flex-wrap items-center justify-end gap-2">
             <div className="hidden items-center gap-1 rounded-2xl bg-white/10 p-1.5 lg:flex">
-              {navItems.map((item) => (
+              {desktopNavItems.map((item) => (
                 <NavLink
                   className={({ isActive }) =>
                     `shrink-0 rounded-full px-4 py-2.5 text-sm font-extrabold transition ${
