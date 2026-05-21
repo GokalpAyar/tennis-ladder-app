@@ -63,12 +63,11 @@ function DashboardPage() {
 }
 
 const approvalSteps = [
-  'Create your account',
   'Wait for club approval',
   'Admin assigns your ladder ranking',
-  'Challenge players up to 3 spots above you',
+  'Once approved, challenge players up to 3 spots above you',
   'Agree on a match time',
-  'Call the tennis office to reserve a court',
+  'Contact the tennis office to reserve the court',
   'Play your match and report the winner',
 ];
 
@@ -183,9 +182,9 @@ function PendingApprovalGuide() {
           <div className="mt-5 grid gap-3">
             <a
               className="rounded-2xl border border-line-200 bg-white px-4 py-3 text-sm font-black text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
-              href="mailto:tenis@rotonpoint.org"
+              href="mailto:tennis@rotonpoint.org"
             >
-              tenis@rotonpoint.org
+              tennis@rotonpoint.org
             </a>
             <a
               className="rounded-2xl border border-line-200 bg-white px-4 py-3 text-sm font-black text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
@@ -217,7 +216,7 @@ function ApprovedPlayerGuide() {
           </p>
         </div>
         <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900">
-          Court Reservations: tenis@rotonpoint.org - 203-838-1606 ext. 101
+          Court Reservations: tennis@rotonpoint.org - 203-838-1606 ext. 101
         </div>
       </div>
 

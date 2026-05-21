@@ -1144,7 +1144,7 @@ function AdminPage() {
                         </p>
                         {match.status === 'scheduled' && (
                           <p className="mt-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-bold text-court-900">
-                            Court Reservations: tenis@rotonpoint.org · 203-838-1606 ext. 101
+                            Court Reservations: tennis@rotonpoint.org · 203-838-1606 ext. 101
                           </p>
                         )}
                         {match.winner_id && (

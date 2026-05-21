@@ -1851,10 +1851,10 @@ function CourtReservationsCard({ className = '' }: { className?: string }) {
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         <a
           className="inline-flex items-center gap-2 rounded-xl border border-line-200 bg-white px-3 py-2 font-bold text-court-900 transition hover:border-court-500 hover:bg-court-50"
-          href="mailto:tenis@rotonpoint.org"
+          href="mailto:tennis@rotonpoint.org"
         >
           <MailIcon />
-          tenis@rotonpoint.org
+          tennis@rotonpoint.org
         </a>
         <a
           className="inline-flex items-center gap-2 rounded-xl border border-line-200 bg-white px-3 py-2 font-bold text-court-900 transition hover:border-court-500 hover:bg-court-50"

@@ -21,13 +21,13 @@ function CourtInfoPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <a
               className="rounded-2xl border border-line-200 bg-white px-5 py-5 text-center shadow-sm transition hover:border-court-500 hover:bg-court-50"
-              href="mailto:tenis@rotonpoint.org"
+              href="mailto:tennis@rotonpoint.org"
             >
               <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
                 Email
               </p>
               <p className="mt-2 text-lg font-black text-ink-900">
-                tenis@rotonpoint.org
+                tennis@rotonpoint.org
               </p>
             </a>
             <a
