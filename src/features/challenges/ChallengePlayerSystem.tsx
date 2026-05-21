@@ -1,7 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { Link } from 'react-router-dom';
-import { useNotifications } from '../../app/NotificationsProvider';
 import { supabase } from '../../lib/supabase';
 
 type Profile = {
@@ -110,7 +109,6 @@ function ChallengePlayerSystem({
   adminPreview = false,
   variant = 'full',
 }: ChallengePlayerSystemProps) {
-  const { addNotification } = useNotifications();
   const [currentPlayer, setCurrentPlayer] = useState<RankedPlayer | null>(null);
   const [players, setPlayers] = useState<RankedPlayer[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -145,42 +143,6 @@ function ChallengePlayerSystem({
   useEffect(() => {
     loadChallengeData();
   }, [userId]);
-
-  useEffect(() => {
-    const channel = supabase
-      .channel(`match-updates-${userId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'matches' },
-        (payload) => {
-          const nextMatch = payload.new as Partial<Match>;
-          const previousMatch = payload.old as Partial<Match>;
-          const match = nextMatch.id ? nextMatch : previousMatch;
-
-          if (match.challenger_id !== userId && match.opponent_id !== userId) {
-            return;
-          }
-
-          const notification = getRealtimeNotification({
-            eventType: payload.eventType,
-            match: nextMatch,
-            previousMatch,
-            userId,
-          });
-
-          if (notification) {
-            addNotification(notification.title, notification.message);
-          }
-
-          loadChallengeData();
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [addNotification, userId]);
 
   const playersById = useMemo(() => {
     return new Map(players.map((player) => [player.id, player]));
@@ -373,7 +335,6 @@ function ChallengePlayerSystem({
     }
 
     setMessage('Challenge sent.');
-    addNotification('Challenge sent', 'Waiting for a response.');
     await loadChallengeData();
   }
 
@@ -397,10 +358,6 @@ function ChallengePlayerSystem({
     }
 
     setMessage(status === 'accepted' ? 'Challenge accepted.' : 'Challenge declined.');
-    addNotification(
-      status === 'accepted' ? 'Challenge accepted' : 'Challenge declined',
-      status === 'accepted' ? 'Choose match times next.' : 'The challenge is closed.',
-    );
     await loadChallengeData();
   }
 
@@ -461,7 +418,6 @@ function ChallengePlayerSystem({
       return next;
     });
     setMessage('Match time options sent.');
-    addNotification('New times proposed', 'Waiting for a time choice.');
     await loadChallengeData();
   }
 
@@ -517,7 +473,6 @@ function ChallengePlayerSystem({
     }
 
     setMessage('Match scheduled. Please call the tennis office to reserve the court.');
-    addNotification('Match scheduled', 'Please contact the tennis office.');
     await loadChallengeData();
   }
 
@@ -614,7 +569,6 @@ function ChallengePlayerSystem({
     }
 
     setMessage('Match canceled.');
-    addNotification('Match canceled', 'This match is no longer active.');
     await loadChallengeData();
   }
 
@@ -738,7 +692,6 @@ function ChallengePlayerSystem({
       return nextDrafts;
     });
     setMessage(`Winner submitted: ${winnerName}. Records updated and ladder movement checked.`);
-    addNotification('Result submitted', `Winner: ${winnerName}`);
     await loadChallengeData();
   }
 
@@ -1058,130 +1011,6 @@ function ChallengePlayerSystem({
         ) : (
           <LadderListView currentPlayer={currentPlayer} players={players} />
         )}
-      </div>
-    );
-  }
-
-  if (isDashboard) {
-    const dashboardMatch = blockingMatches[0] ?? null;
-
-    return (
-      <div className="space-y-3">
-        {(message || errorMessage) && (
-          <div
-            className={`whitespace-pre-line rounded-2xl border px-4 py-3 text-sm font-bold shadow-sm ${
-              errorMessage
-                ? 'border-red-300 bg-red-50 text-red-700'
-                : 'border-court-500 bg-white text-court-900'
-            }`}
-            role={errorMessage ? 'alert' : 'status'}
-          >
-            {errorMessage || message}
-          </div>
-        )}
-
-        <section className="rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
-            My Rank
-          </p>
-          <div className="mt-2 flex items-center justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black tracking-tight text-ink-900">
-                #{currentPlayer.rankPosition}
-              </h1>
-              <p className="mt-1 text-sm font-bold text-ink-700">{currentPlayer.name}</p>
-            </div>
-            <div className="rounded-2xl bg-court-50 px-4 py-3 text-right">
-              <p className="text-xs font-black uppercase tracking-[0.12em] text-court-700">
-                Record
-              </p>
-              <p className="mt-1 text-xl font-black text-ink-900">
-                {getRecord(currentPlayer)}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
-                Eligible Players
-              </p>
-              <p className="mt-1 text-sm font-bold text-ink-700">
-                Up to 3 spots above.
-              </p>
-            </div>
-            {hasActiveMatch && (
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-court-900">
-                Match active
-              </span>
-            )}
-          </div>
-
-          {eligiblePlayers.length === 0 ? (
-            <EmptyState message="No eligible players right now." />
-          ) : (
-            <div className="mt-3 grid gap-2">
-              {eligiblePlayers.slice(0, 3).map((player) => {
-                const blockingMatch = getBlockingMatchWith(player.id);
-
-                return (
-                  <div
-                    className="flex items-center justify-between gap-3 rounded-xl border border-line-200 bg-white px-3 py-3"
-                    key={player.id}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-black text-ink-900">
-                        #{player.rankPosition} {player.name}
-                      </p>
-                      <p className="mt-0.5 text-xs font-bold text-ink-600">
-                        {player.wins}-{player.losses}
-                      </p>
-                    </div>
-                    {blockingMatch ? (
-                      <StatusBadge label={getStatusLabel(blockingMatch)} />
-                    ) : (
-                      <button
-                        className="shrink-0 rounded-full bg-court-900 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        type="button"
-                        onClick={() => sendChallenge(player.id)}
-                        disabled={hasActiveMatch || actionId === player.id}
-                      >
-                        {actionId === player.id ? 'Sending' : 'Challenge'}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <DashboardMatchCard
-          actionId={actionId}
-          cancelingMatchId={cancelingMatchId}
-          currentPlayer={currentPlayer}
-          match={dashboardMatch}
-          playersById={playersById}
-          proposalDrafts={
-            dashboardMatch
-              ? timeProposalDrafts[dashboardMatch.id] ?? getDefaultTimeProposalDrafts()
-              : getDefaultTimeProposalDrafts()
-          }
-          submittingWinnerId={submittingWinnerId}
-          winnerDraft={dashboardMatch ? winnerDrafts[dashboardMatch.id] : undefined}
-          onAccept={(match) => updateChallengeStatus(match.id, 'accepted')}
-          onCancel={cancelMatch}
-          onChooseTime={chooseMatchTime}
-          onDecline={(match) => updateChallengeStatus(match.id, 'declined')}
-          onProposalChange={(matchId, index, nextDraft) =>
-            updateTimeProposalDraft(matchId, index, nextDraft)
-          }
-          onProposeTime={proposeMatchTime}
-          onSubmitWinner={submitWinner}
-          onWinnerChange={updateWinnerDraft}
-        />
       </div>
     );
   }
@@ -2717,198 +2546,6 @@ function TimeProposalForm({
   );
 }
 
-function DashboardMatchCard({
-  actionId,
-  cancelingMatchId,
-  currentPlayer,
-  match,
-  playersById,
-  proposalDrafts,
-  submittingWinnerId,
-  winnerDraft,
-  onAccept,
-  onCancel,
-  onChooseTime,
-  onDecline,
-  onProposalChange,
-  onProposeTime,
-  onSubmitWinner,
-  onWinnerChange,
-}: {
-  actionId: string | null;
-  cancelingMatchId: string | null;
-  currentPlayer: RankedPlayer;
-  match: Match | null;
-  playersById: Map<string, RankedPlayer>;
-  proposalDrafts: TimeProposalDraft[];
-  submittingWinnerId: string | null;
-  winnerDraft?: WinnerDraft;
-  onAccept: (match: Match) => void;
-  onCancel: (match: Match) => void;
-  onChooseTime: (match: Match, proposal: MatchTimeProposal) => void;
-  onDecline: (match: Match) => void;
-  onProposalChange: (
-    matchId: string,
-    index: number,
-    nextDraft: Partial<TimeProposalDraft>,
-  ) => void;
-  onProposeTime: (match: Match, event: FormEvent<HTMLFormElement>) => void;
-  onSubmitWinner: (match: Match, event: FormEvent<HTMLFormElement>) => void;
-  onWinnerChange: (matchId: string, nextDraft: Partial<WinnerDraft>) => void;
-}) {
-  if (!match) {
-    return (
-      <section className="rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm">
-        <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
-          My Match
-        </p>
-        <h2 className="mt-2 text-xl font-black text-ink-900">No match right now</h2>
-        <p className="mt-1 text-sm font-bold text-ink-600">
-          Choose an eligible player when you are ready.
-        </p>
-      </section>
-    );
-  }
-
-  const isOpponent = match.opponent_id === currentPlayer.id;
-  const isTimeProposer = match.proposed_by_player_id === currentPlayer.id;
-  const opponentName = getOpponentName(match, currentPlayer, playersById);
-  const selectedWinnerId = winnerDraft?.winnerId ?? '';
-  const needsAction = isMatchActionNeeded(match, currentPlayer);
-
-  return (
-    <section
-      className={`rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm ${
-        needsAction ? 'match-update-glow' : ''
-      }`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
-            My Match
-          </p>
-          <h2 className="mt-1 text-lg font-black text-ink-900">{opponentName}</h2>
-        </div>
-        <StatusBadge label={getStatusLabel(match)} />
-      </div>
-
-      {match.status === 'pending' && !isOpponent && (
-        <div className="mt-4 rounded-xl bg-court-50 px-4 py-3">
-          <p className="text-base font-black text-ink-900">Waiting for response</p>
-          <p className="mt-1 text-sm font-semibold text-ink-700">
-            You will see the next step here.
-          </p>
-        </div>
-      )}
-
-      {match.status === 'pending' && isOpponent && (
-        <div className="mt-4">
-          <p className="text-base font-black text-ink-900">New challenge</p>
-          <div className="mt-3 flex gap-2">
-            <button
-              className="rounded-full bg-court-900 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
-              type="button"
-              onClick={() => onAccept(match)}
-              disabled={actionId === match.id}
-            >
-              Accept
-            </button>
-            <button
-              className="rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-black text-ink-700 shadow-sm disabled:opacity-60"
-              type="button"
-              onClick={() => onDecline(match)}
-              disabled={actionId === match.id}
-            >
-              Decline
-            </button>
-          </div>
-        </div>
-      )}
-
-      {match.status === 'accepted' && (
-        <div className="mt-4">
-          <p className="text-base font-black text-ink-900">Challenge accepted</p>
-          <TimeProposalForm
-            actionId={actionId}
-            match={match}
-            proposalDrafts={proposalDrafts}
-            onProposalChange={onProposalChange}
-            onPropose={onProposeTime}
-          />
-        </div>
-      )}
-
-      {match.status === 'time_proposed' && (
-        <div className="mt-4">
-          <p className="text-base font-black text-ink-900">
-            {isTimeProposer ? 'Waiting for time choice' : 'New times received'}
-          </p>
-          <ProposalSummary
-            actionId={actionId}
-            isTimeProposer={isTimeProposer}
-            match={match}
-            onChooseTime={(proposal) => onChooseTime(match, proposal)}
-            opponentName={opponentName}
-            showActions
-          />
-        </div>
-      )}
-
-      {match.status === 'scheduled' && (
-        <form className="mt-4" onSubmit={(event) => onSubmitWinner(match, event)}>
-          <div className="rounded-xl bg-emerald-50 px-4 py-3">
-            <p className="text-base font-black text-ink-900">Match scheduled</p>
-            <p className="mt-1 text-sm font-bold text-emerald-800">
-              {formatScheduledMatchTime(match)}
-            </p>
-          </div>
-
-          <p className="mt-4 text-sm font-black text-ink-900">Submit winner</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {[match.challenger_id, match.opponent_id].map((playerId) => (
-              <button
-                className={`rounded-xl border px-3 py-3 text-left text-sm font-black ${
-                  selectedWinnerId === playerId
-                    ? 'border-blue-300 bg-blue-50 text-court-900'
-                    : 'border-line-200 bg-white text-ink-900'
-                }`}
-                key={playerId}
-                type="button"
-                onClick={() => onWinnerChange(match.id, { winnerId: playerId })}
-              >
-                {getPlayerName(playerId, currentPlayer, playersById)}
-              </button>
-            ))}
-          </div>
-          <button
-            className="mt-3 rounded-full bg-court-900 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
-            type="submit"
-            disabled={!selectedWinnerId || submittingWinnerId === match.id}
-          >
-            {submittingWinnerId === match.id ? 'Saving' : 'Submit Winner'}
-          </button>
-        </form>
-      )}
-
-      <div className="mt-4 flex justify-between gap-2 border-t border-line-200 pt-3">
-        <Link className="text-sm font-black text-court-900 hover:text-court-700" to="/activities">
-          Details
-        </Link>
-        {CANCELABLE_MATCH_STATUSES.includes(match.status) && (
-          <button
-            className="text-sm font-black text-red-700 disabled:opacity-60"
-            type="button"
-            onClick={() => onCancel(match)}
-            disabled={cancelingMatchId === match.id || actionId === match.id}
-          >
-            {cancelingMatchId === match.id ? 'Canceling' : 'Cancel'}
-          </button>
-        )}
-      </div>
-    </section>
-  );
-}
-
 function ChallengeCard({
   actionId,
   cancelingMatchId,
@@ -3412,77 +3049,6 @@ function isMatchActionNeeded(match: Match, currentPlayer: RankedPlayer) {
   }
 
   return false;
-}
-
-function getRealtimeNotification({
-  eventType,
-  match,
-  previousMatch,
-  userId,
-}: {
-  eventType: string;
-  match: Partial<Match>;
-  previousMatch: Partial<Match>;
-  userId: string;
-}) {
-  if (eventType === 'INSERT' && match.opponent_id === userId) {
-    return {
-      title: 'New challenge',
-      message: 'A player challenged you.',
-    };
-  }
-
-  if (eventType !== 'UPDATE') {
-    return null;
-  }
-
-  if (match.status === previousMatch.status) {
-    return null;
-  }
-
-  if (match.status === 'accepted' && match.challenger_id === userId) {
-    return {
-      title: 'Challenge accepted',
-      message: 'You can propose match times.',
-    };
-  }
-
-  if (match.status === 'declined' && match.challenger_id === userId) {
-    return {
-      title: 'Challenge declined',
-      message: 'That challenge is closed.',
-    };
-  }
-
-  if (match.status === 'time_proposed' && match.proposed_by_player_id !== userId) {
-    return {
-      title: 'New times proposed',
-      message: 'Please choose a time.',
-    };
-  }
-
-  if (match.status === 'scheduled' && match.proposed_by_player_id === userId) {
-    return {
-      title: 'Match scheduled',
-      message: 'Please contact the tennis office.',
-    };
-  }
-
-  if (match.status === 'canceled' && match.canceled_by !== userId) {
-    return {
-      title: 'Match canceled',
-      message: 'Your match was canceled.',
-    };
-  }
-
-  if (match.status === 'completed') {
-    return {
-      title: 'Result submitted',
-      message: 'The match result was recorded.',
-    };
-  }
-
-  return null;
 }
 
 function getTimeProposalTurnMessage({
