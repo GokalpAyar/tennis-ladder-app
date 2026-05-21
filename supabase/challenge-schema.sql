@@ -366,6 +366,8 @@ alter table public.ladder_rankings enable row level security;
 alter table public.matches enable row level security;
 
 drop policy if exists "Authenticated users can read profiles" on public.profiles;
+drop policy if exists "Users can create their own profile" on public.profiles;
+drop policy if exists "Users can update their profile" on public.profiles;
 drop policy if exists "Authenticated users can read ladder rankings" on public.ladder_rankings;
 drop policy if exists "Profiles can read their matches" on public.matches;
 drop policy if exists "Profiles can create their own challenges" on public.matches;
@@ -376,6 +378,23 @@ on public.profiles
 for select
 to authenticated
 using (true);
+
+create policy "Users can create their own profile"
+on public.profiles
+for insert
+to authenticated
+with check (
+  auth.uid() = id
+  and role = 'player'
+  and status = 'pending'
+);
+
+create policy "Users can update their profile"
+on public.profiles
+for update
+to authenticated
+using (auth.uid() = id)
+with check (auth.uid() = id);
 
 create policy "Authenticated users can read ladder rankings"
 on public.ladder_rankings

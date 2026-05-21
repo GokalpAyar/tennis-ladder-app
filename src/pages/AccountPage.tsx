@@ -30,7 +30,6 @@ function AccountPage() {
   const [passwordMessage, setPasswordMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const userId = session?.user.id;
   const email = profile?.email || session?.user.email || 'Email unavailable';
   const wins = ranking?.wins ?? 0;
   const losses = ranking?.losses ?? 0;
@@ -90,10 +89,11 @@ function AccountPage() {
   async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!userId) {
+    if (!session?.user) {
       return;
     }
 
+    const currentUser = session.user;
     const trimmedName = fullName.trim();
 
     if (!trimmedName) {
@@ -106,10 +106,19 @@ function AccountPage() {
     setErrorMessage('');
     setProfileMessage('');
 
+    const ensuredProfile = await ensureProfile(currentUser);
+
+    if (ensuredProfile.error) {
+      setIsSavingProfile(false);
+      console.error('Profile creation before update failed:', ensuredProfile.error);
+      setErrorMessage(`Could not create your profile. ${formatSupabaseError(ensuredProfile.error)}`);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('profiles')
       .update({ full_name: trimmedName })
-      .eq('id', userId)
+      .eq('id', currentUser.id)
       .select('full_name, email, status')
       .maybeSingle();
 
@@ -122,7 +131,9 @@ function AccountPage() {
     }
 
     if (!data) {
-      setErrorMessage('Profile update did not return a profile. Please refresh and try again.');
+      setErrorMessage(
+        'Profile update did not return a profile. Please make sure the profile self-update policy has been applied in Supabase.',
+      );
       return;
     }
 
