@@ -1,46 +1,17 @@
-import { useState } from 'react';
 import AppLayout from '../app/AppLayout';
 import { useAuth } from '../app/AuthProvider';
 import ChallengePlayerSystem from '../features/challenges/ChallengePlayerSystem';
 
 function DashboardPage() {
   const { profileStatus, role, session } = useAuth();
-  const [showApprovedGuide, setShowApprovedGuide] = useState(false);
 
   return (
     <AppLayout>
-      <section className="mx-auto w-full max-w-[92rem] space-y-4 sm:space-y-5">
+      <section className="mx-auto w-full max-w-5xl space-y-4">
         {profileStatus === 'pending' && role !== 'admin' ? (
           <PendingApprovalGuide />
         ) : (
           <>
-            <header className="hero-panel dashboard-hero rounded-[2rem] p-4 sm:p-5 lg:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-court-700">
-                    Roton Point Tennis Tournament Ladder
-                  </p>
-                  <h1 className="mt-1.5 max-w-3xl text-2xl font-black leading-tight tracking-tight text-ink-900 sm:text-3xl lg:text-4xl">
-                    Dashboard
-                  </h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-700">
-                    See your rank, eligible opponents, active challenges, and scheduled matches at a glance.
-                  </p>
-                </div>
-                <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
-                  <button
-                    className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
-                    type="button"
-                    onClick={() => setShowApprovedGuide((isVisible) => !isVisible)}
-                  >
-                    {showApprovedGuide ? 'Hide Guide' : 'How It Works'}
-                  </button>
-                </div>
-              </div>
-            </header>
-
-            {showApprovedGuide && <ApprovedPlayerGuide />}
-
             {role === 'admin' && (
               <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm font-bold text-court-900">
                 Player Preview Mode: admin tools remain available from the Admin
@@ -76,15 +47,6 @@ const ladderRules = [
   'If the lower-ranked challenger wins, both players switch positions',
   'If the higher-ranked player wins, rankings stay the same',
   'One active match at a time',
-];
-
-const approvedGuideSteps = [
-  'Review your current rank',
-  'Choose an eligible player up to 3 spots above you',
-  'Send a challenge',
-  'Agree on one of the proposed match times',
-  'Call the tennis office to reserve a court',
-  'Play your match and report the winner',
 ];
 
 function PendingApprovalGuide() {
@@ -196,59 +158,6 @@ function PendingApprovalGuide() {
         </section>
       </div>
     </div>
-  );
-}
-
-function ApprovedPlayerGuide() {
-  return (
-    <section className="premium-card rounded-[2rem] p-5 sm:p-7">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-court-700">
-            Player Guide
-          </p>
-          <h2 className="mt-2 text-2xl font-black tracking-tight text-ink-900">
-            How to use the ladder
-          </h2>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-ink-700">
-            Follow these steps when you are ready to challenge, schedule, and
-            complete a match.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900">
-          Court Reservations: tennis@rotonpoint.org - 203-838-1606 ext. 101
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {approvedGuideSteps.map((step, index) => (
-          <article
-            className="rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm"
-            key={step}
-          >
-            <div className="flex size-9 items-center justify-center rounded-full bg-court-900 text-sm font-black text-white">
-              {index + 1}
-            </div>
-            <p className="mt-3 text-xs font-black uppercase tracking-[0.14em] text-court-700">
-              Step {index + 1}
-            </p>
-            <p className="mt-1 text-sm font-black leading-6 text-ink-900">{step}</p>
-          </article>
-        ))}
-      </div>
-
-      <div className="mt-5 grid gap-3 lg:grid-cols-4">
-        {ladderRules.map((rule) => (
-          <div
-            className="flex gap-3 rounded-2xl border border-line-200 bg-white px-4 py-3 text-sm font-semibold text-ink-800 shadow-sm"
-            key={rule}
-          >
-            <CheckDot />
-            <span>{rule}</span>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
