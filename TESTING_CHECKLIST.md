@@ -105,6 +105,33 @@ Use this checklist to manually verify the Roton Point Tennis Tournament Ladder a
 - Proposed slots are visible.
 - Duplicate slots and past dates are blocked.
 
+## Both Players Can Propose Match Times
+
+**Account needed:** Two approved ranked players, Player A and Player B, with no active matches.
+
+**Steps:**
+1. Log in as Player A.
+2. Send a challenge to Player B.
+3. Log out and log in as Player B.
+4. Accept the challenge.
+5. Log out and log in as Player A.
+6. Open Activities.
+7. Propose up to 3 valid match time slots.
+8. Confirm the proposed times are saved and visible.
+9. Cancel the match or use another test match to repeat the flow.
+10. Log in as Player A and send a new challenge to Player B.
+11. Log in as Player B and accept.
+12. Stay logged in as Player B and propose up to 3 valid match time slots.
+13. Confirm the proposed times are saved and visible.
+14. Before scheduling, use Request New Times from each side and confirm both players can reopen the proposal flow.
+
+**Expected result:**
+- Player A can propose times after Player B accepts.
+- Player B can also propose times after accepting.
+- Either player can request new times before a final scheduled time is confirmed.
+- Previous proposed times remain visible until replacement times are submitted.
+- Time proposal rules still apply: 8:00 AM to 8:00 PM, 90-minute slots, up to 3 proposals.
+
 ## Request New Times
 
 **Account needed:** Player in a scheduled or time proposed match.
