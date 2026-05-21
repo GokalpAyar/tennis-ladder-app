@@ -22,30 +22,33 @@ function AppLayout({ children }: { children: ReactNode }) {
     { label: 'Activities', to: '/activities' },
     { label: 'Court Info', to: '/court-info' },
   ];
-  const desktopNavItems = [{ label: 'Dashboard', to: '/dashboard' }];
+  const desktopNavItems = [
+    ...navItems,
+    { label: 'Account', to: '/account' },
+  ];
 
   return (
     <div className="app-shell min-h-screen text-ink-900">
       <header className="sticky top-0 z-20 border-b border-white/10 bg-court-900 text-white shadow-sm">
-        <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <div className="mx-auto flex w-full max-w-[96rem] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <Link className="flex items-center gap-4" to="/dashboard">
-            <span className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-black/15 ring-1 ring-white/20 sm:size-20">
+            <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-black/15 ring-1 ring-white/20 sm:size-16">
               <img
                 alt=""
-                className="block size-14 object-contain sm:size-[4.5rem]"
+                className="block size-12 object-contain sm:size-14"
                 height="72"
                 src="/images/logo1.png"
                 width="72"
               />
             </span>
             <span>
-              <span className="hidden text-lg font-black leading-tight tracking-tight sm:block xl:text-2xl">
+              <span className="hidden text-base font-black leading-tight tracking-tight md:block xl:text-xl">
                 Roton Point Tennis Tournament Ladder
               </span>
-              <span className="block text-xl font-black leading-tight tracking-tight sm:hidden">
+              <span className="block text-lg font-black leading-tight tracking-tight md:hidden">
                 Roton Point Ladder
               </span>
-              <span className="block text-xs font-bold uppercase tracking-[0.18em] text-white/60">
+              <span className="hidden text-xs font-bold uppercase tracking-[0.18em] text-white/60 sm:block">
                 Club Challenge Portal
               </span>
             </span>
@@ -56,7 +59,7 @@ function AppLayout({ children }: { children: ReactNode }) {
               {desktopNavItems.map((item) => (
                 <NavLink
                   className={({ isActive }) =>
-                    `shrink-0 rounded-full px-4 py-2.5 text-sm font-extrabold transition ${
+                    `shrink-0 rounded-full px-3 py-2 text-sm font-extrabold transition xl:px-4 ${
                       isActive
                         ? 'bg-white text-court-900 shadow-sm'
                         : 'text-white/80 hover:bg-white/15 hover:text-white'
@@ -68,9 +71,31 @@ function AppLayout({ children }: { children: ReactNode }) {
                   {item.label}
                 </NavLink>
               ))}
+              {role === 'admin' && (
+                <NavLink
+                  className={({ isActive }) =>
+                    `shrink-0 rounded-full px-3 py-2 text-sm font-extrabold transition xl:px-4 ${
+                      isActive
+                        ? 'bg-white text-court-900 shadow-sm'
+                        : 'text-white/80 hover:bg-white/15 hover:text-white'
+                    }`
+                  }
+                  to="/admin"
+                >
+                  Admin
+                </NavLink>
+              )}
+              <button
+                className="shrink-0 rounded-full px-3 py-2 text-sm font-extrabold text-white/80 transition hover:bg-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 xl:px-4"
+                type="button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+              >
+                {isLoggingOut ? 'Logging out...' : 'Logout'}
+              </button>
             </div>
             <button
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-white/15"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-white/15 lg:hidden"
               type="button"
               aria-expanded={isMenuOpen}
               aria-haspopup="menu"
@@ -83,7 +108,7 @@ function AppLayout({ children }: { children: ReactNode }) {
 
             {isMenuOpen && (
               <div
-                className="absolute right-0 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line-200 bg-white text-ink-900 shadow-xl"
+                className="absolute right-0 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line-200 bg-white text-ink-900 shadow-xl lg:hidden"
                 role="menu"
               >
                 <div className="border-b border-line-200 px-4 py-3">
