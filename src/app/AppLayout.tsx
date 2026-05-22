@@ -152,9 +152,9 @@ function AppLayout({ children }: { children: ReactNode }) {
                     <p className="text-sm font-black text-ink-900">Contact / Court Info</p>
                     <a
                       className="mt-2 block text-sm font-bold text-court-800 hover:text-court-600"
-                      href="mailto:tennis@rotonpoint.org"
+                      href="mailto:teniss@rotonpoint.org"
                     >
-                      tennis@rotonpoint.org
+                      teniss@rotonpoint.org
                     </a>
                     <a
                       className="mt-1 block text-sm font-bold text-court-800 hover:text-court-600"
@@ -185,8 +185,8 @@ function AppLayout({ children }: { children: ReactNode }) {
         <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="font-bold text-ink-900">Court Reservations</p>
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
-            <a className="font-semibold text-court-800 hover:text-court-600" href="mailto:tennis@rotonpoint.org">
-              tennis@rotonpoint.org
+            <a className="font-semibold text-court-800 hover:text-court-600" href="mailto:teniss@rotonpoint.org">
+              teniss@rotonpoint.org
             </a>
             <a className="font-semibold text-court-800 hover:text-court-600" href="tel:2038381606">
               203-838-1606 ext. 101

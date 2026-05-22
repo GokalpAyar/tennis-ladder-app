@@ -183,9 +183,9 @@ function PendingApprovalGuide() {
           <div className="mt-5 grid gap-3">
             <a
               className="rounded-2xl border border-line-200 bg-white px-4 py-3 text-sm font-black text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
-              href="mailto:tennis@rotonpoint.org"
+              href="mailto:teniss@rotonpoint.org"
             >
-              tennis@rotonpoint.org
+              teniss@rotonpoint.org
             </a>
             <a
               className="rounded-2xl border border-line-200 bg-white px-4 py-3 text-sm font-black text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
@@ -217,7 +217,7 @@ function ApprovedPlayerGuide() {
           </p>
         </div>
         <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900">
-          Court Reservations: tennis@rotonpoint.org - 203-838-1606 ext. 101
+          Court Reservations: teniss@rotonpoint.org - 203-838-1606 ext. 101
         </div>
       </div>
 
