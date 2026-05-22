@@ -9,21 +9,21 @@ function DashboardPage() {
 
   return (
     <AppLayout>
-      <section className="mx-auto w-full max-w-[92rem] space-y-4 sm:space-y-5">
+      <section className="mx-auto w-full max-w-[92rem] space-y-4 sm:space-y-5 lg:space-y-3">
         {profileStatus === 'pending' && role !== 'admin' ? (
           <PendingApprovalGuide />
         ) : (
           <>
-            <header className="hero-panel dashboard-hero rounded-[2rem] p-4 sm:p-5 lg:p-6">
+            <header className="hero-panel dashboard-hero rounded-[2rem] p-4 sm:p-5 lg:p-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-court-700">
                     Roton Point Tennis Tournament Ladder
                   </p>
-                  <h1 className="mt-1.5 max-w-3xl text-2xl font-black leading-tight tracking-tight text-ink-900 sm:text-3xl lg:text-4xl">
+                  <h1 className="mt-1.5 max-w-3xl text-2xl font-black leading-tight tracking-tight text-ink-900 sm:text-3xl lg:text-3xl">
                     Dashboard
                   </h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-700">
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-700 lg:mt-1">
                     See your rank, eligible opponents, active challenges, and
                     scheduled matches at a glance.
                   </p>

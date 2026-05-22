@@ -74,6 +74,27 @@
       url('/images/dashboard-bg.jpg') center center / cover no-repeat fixed;
   }
 
+  @media (min-width: 768px) {
+    .app-shell {
+      background: #e9eef5;
+    }
+
+    .app-shell::before {
+      z-index: 0;
+      background:
+        linear-gradient(0deg, rgb(15 23 42 / 0.16), rgb(255 255 255 / 0.72)),
+        url('/images/dashboard-bg.jpg') center center / cover no-repeat fixed;
+      filter: blur(4px);
+      opacity: 0.42;
+      transform: scale(1.03);
+    }
+
+    .app-content {
+      background: linear-gradient(0deg, rgb(248 250 252 / 0.88), rgb(248 250 252 / 0.92));
+      backdrop-filter: blur(2px);
+    }
+  }
+
   .premium-card {
     border: 1px solid rgb(217 226 241 / 0.95);
     background: rgb(255 255 255 / 0.98);

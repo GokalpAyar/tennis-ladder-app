@@ -198,6 +198,14 @@ function ChallengePlayerSystem({
     return matches.filter((match) => match.status === 'completed');
   }, [matches]);
 
+  const dashboardMatch = useMemo(() => {
+    return scheduledMatches[0] ?? matchActivityMatches[0] ?? null;
+  }, [matchActivityMatches, scheduledMatches]);
+
+  const dashboardMatchSummary = useMemo(() => {
+    return getDashboardMatchSummary(dashboardMatch, currentPlayer, playersById);
+  }, [currentPlayer, dashboardMatch, playersById]);
+
   const eligiblePlayerIds = useMemo(() => {
     if (!currentPlayer || currentPlayer.rankPosition === 1) {
       return new Set<string>();
@@ -1121,7 +1129,7 @@ function ChallengePlayerSystem({
     <div
       className={
         isDashboard
-          ? 'grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(18rem,0.85fr)] md:items-start'
+          ? 'grid gap-4 md:grid-cols-[minmax(0,1fr)_17rem] md:items-start md:gap-3'
           : 'space-y-6'
       }
     >
@@ -1142,8 +1150,8 @@ function ChallengePlayerSystem({
         </div>
       )}
 
-      <section className={`${cardClass} ${isDashboard ? 'md:col-start-1 md:row-start-1 md:h-full' : ''}`}>
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+      <section className={`${cardClass} ${isDashboard ? 'md:col-start-1 md:row-start-1 md:p-4' : ''}`}>
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between md:hidden">
           <div className="flex items-start gap-4">
             <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-court-900 text-lime-300">
               <TrophyIcon />
@@ -1170,11 +1178,34 @@ function ChallengePlayerSystem({
             </p>
           </div>
         </div>
+        <div className="hidden md:block">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
+            My Ranking
+          </p>
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <p className="text-3xl font-black tracking-tight text-ink-900">
+              #{currentPlayer.rankPosition}
+            </p>
+            <h2 className="min-w-0 truncate text-xl font-black tracking-tight text-ink-900">
+              {currentPlayer.name}
+            </h2>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-line-200 bg-white px-3 py-1 text-xs font-black text-court-900">
+              Record {getRecord(currentPlayer)}
+            </span>
+            <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-black text-court-900">
+              {currentPlayer.rankPosition === 1
+                ? 'Top rank'
+                : 'Can challenge up to 3 spots above'}
+            </span>
+          </div>
+        </div>
       </section>
 
       {isDashboard && hasActiveMatch && (
         <section
-          className={`${cardClass} md:col-start-2 md:row-start-1 md:h-full ${
+          className={`${cardClass} md:hidden ${
             hasMatchActionNeeded ? 'match-update-glow' : ''
           }`}
         >
@@ -1195,28 +1226,24 @@ function ChallengePlayerSystem({
         </section>
       )}
 
-      {isDashboard && !hasActiveMatch && (
-        <section className={`${cardClass} hidden md:col-start-2 md:row-start-1 md:block md:h-full`}>
+      {isDashboard && (
+        <section
+          className={`${cardClass} hidden md:col-start-2 md:row-start-1 md:block md:p-4 ${
+            hasMatchActionNeeded ? 'match-update-glow' : ''
+          }`}
+        >
           <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
-            Quick Actions
+            My Match
           </p>
-          <h2 className="mt-2 text-xl font-black tracking-tight text-ink-900">
-            No active match right now
+          <h2 className="mt-2 text-lg font-black tracking-tight text-ink-900">
+            {dashboardMatchSummary.title}
           </h2>
-          <p className="mt-2 text-sm leading-6 text-ink-700">
-            After you send or receive a challenge, use Activities to manage the match.
+          <p className="mt-1 text-sm leading-5 text-ink-700">
+            {dashboardMatchSummary.description}
           </p>
-          <div className="mt-5 grid gap-2">
-            <Link className="btn-primary w-full text-sm" to="/activities">
-              Go to Activities
-            </Link>
-            <Link
-              className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
-              to="/court-info"
-            >
-              Court Info
-            </Link>
-          </div>
+          <Link className="btn-primary mt-4 w-full px-3 py-2 text-sm" to="/activities">
+            {dashboardMatchSummary.actionLabel}
+          </Link>
         </section>
       )}
 
@@ -1231,18 +1258,37 @@ function ChallengePlayerSystem({
         />
       )}
 
-      <section className={`${cardClass} ${isDashboard ? 'md:col-start-1 md:row-start-2' : ''}`}>
-        <SectionHeader
-          icon={<TargetIcon />}
-          title="Eligible Players to Challenge"
-          description={
-            hasActiveMatch
-              ? 'Active match in progress.'
-              : currentPlayer.rankPosition === 1
-                ? 'Rank 1 cannot challenge anyone.'
-                : 'Only players ranked up to 3 spots above you are available.'
-          }
-        />
+      <section className={`${cardClass} ${isDashboard ? 'md:col-span-2 md:row-start-2 md:p-4' : ''}`}>
+        <div className={isDashboard ? 'md:hidden' : ''}>
+          <SectionHeader
+            icon={<TargetIcon />}
+            title="Eligible Players to Challenge"
+            description={
+              hasActiveMatch
+                ? 'Active match in progress.'
+                : currentPlayer.rankPosition === 1
+                  ? 'Rank 1 cannot challenge anyone.'
+                  : 'Only players ranked up to 3 spots above you are available.'
+            }
+          />
+        </div>
+        {isDashboard && (
+          <div className="hidden md:flex md:items-center md:justify-between md:gap-3">
+            <div>
+              <h2 className="text-base font-black tracking-tight text-ink-900">
+                Eligible Players
+              </h2>
+              <p className="mt-1 text-xs font-semibold text-ink-700">
+                Rank, record, challenge.
+              </p>
+            </div>
+            {hasActiveMatch && (
+              <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-black text-court-900">
+                Finish active match first
+              </span>
+            )}
+          </div>
+        )}
         {hasActiveMatch && (
           <p className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-bold text-court-900 md:hidden">
             {ACTIVE_MATCH_MESSAGE}
@@ -1257,38 +1303,47 @@ function ChallengePlayerSystem({
 
               return (
                 <div
-                  className="flex flex-col gap-3 rounded-xl border border-line-200 bg-white px-4 py-3 shadow-sm transition hover:border-court-500 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 rounded-xl border border-line-200 bg-white px-4 py-3 shadow-sm transition hover:border-court-500 sm:flex-row sm:items-center sm:justify-between md:grid md:grid-cols-[4.5rem_minmax(0,1fr)_5.5rem_auto] md:gap-3 md:px-3 md:py-2 md:shadow-none"
                   key={player.id}
                 >
-                  <div>
+                  <p className="hidden text-sm font-black text-court-900 md:block">
+                    #{player.rankPosition}
+                  </p>
+                  <div className="min-w-0">
                     <p className="text-sm font-bold text-ink-900">
-                      #{player.rankPosition} {player.name}
+                      <span className="md:hidden">#{player.rankPosition} </span>
+                      {player.name}
                     </p>
-                    <p className="mt-1 text-sm text-ink-700">
+                    <p className="mt-1 text-sm text-ink-700 md:hidden">
                       {currentPlayer.rankPosition - player.rankPosition} spot
                       {currentPlayer.rankPosition - player.rankPosition === 1 ? '' : 's'} above you
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-ink-700">
+                    <p className="mt-1 text-sm font-semibold text-ink-700 md:hidden">
                       Record {player.wins}-{player.losses}
                     </p>
                   </div>
-                  {blockingMatch ? (
-                    <StatusBadge label={getStatusLabel(blockingMatch)} />
-                  ) : hasActiveMatch ? (
-                    <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-bold text-court-900">
-                      Finish active match first
-                    </span>
-                  ) : (
-                    <button
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-court-900 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      type="button"
-                      onClick={() => sendChallenge(player.id)}
-                      disabled={actionId === player.id}
-                    >
-                      <ChallengeIcon />
-                      {actionId === player.id ? 'Sending...' : 'Challenge'}
-                    </button>
-                  )}
+                  <p className="hidden text-sm font-black text-ink-900 md:block">
+                    {player.wins}-{player.losses}
+                  </p>
+                  <div className="md:justify-self-end">
+                    {blockingMatch ? (
+                      <StatusBadge label={getStatusLabel(blockingMatch)} />
+                    ) : hasActiveMatch ? (
+                      <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-bold text-court-900">
+                        Finish active match first
+                      </span>
+                    ) : (
+                      <button
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-court-900 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60 md:px-3 md:py-1.5 md:text-xs"
+                        type="button"
+                        onClick={() => sendChallenge(player.id)}
+                        disabled={actionId === player.id}
+                      >
+                        <ChallengeIcon />
+                        {actionId === player.id ? 'Sending...' : 'Challenge'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -2975,6 +3030,67 @@ function getMatchTitle(
   const otherPlayer = playersById.get(otherPlayerId);
 
   return otherPlayer ? `Match with ${otherPlayer.name}` : 'Match';
+}
+
+function getDashboardMatchSummary(
+  match: Match | null,
+  currentPlayer: RankedPlayer | null,
+  playersById: Map<string, RankedPlayer>,
+) {
+  if (!match || !currentPlayer) {
+    return {
+      actionLabel: 'View Activities',
+      description: 'No match is blocking you right now.',
+      title: 'No active match',
+    };
+  }
+
+  const opponentName = getOpponentName(match, currentPlayer, playersById);
+
+  if (match.status === 'pending') {
+    return {
+      actionLabel: match.challenger_id === currentPlayer.id ? 'View Match' : 'Respond',
+      description:
+        match.challenger_id === currentPlayer.id
+          ? `Waiting for ${opponentName} to accept.`
+          : `${opponentName} challenged you.`,
+      title: 'Waiting for response',
+    };
+  }
+
+  if (match.status === 'accepted') {
+    return {
+      actionLabel: 'Set Time',
+      description: `Challenge with ${opponentName} is accepted.`,
+      title: 'Challenge accepted',
+    };
+  }
+
+  if (match.status === 'time_proposed') {
+    const userNeedsToChoose = match.proposed_by_player_id !== currentPlayer.id;
+
+    return {
+      actionLabel: userNeedsToChoose ? 'Choose Time' : 'View Match',
+      description: userNeedsToChoose
+        ? `${opponentName} proposed match times.`
+        : `Waiting for ${opponentName} to choose a time.`,
+      title: userNeedsToChoose ? 'Time proposal needed' : 'Waiting for time selection',
+    };
+  }
+
+  if (match.status === 'scheduled') {
+    return {
+      actionLabel: 'Open Match',
+      description: formatScheduledMatchTime(match),
+      title: 'Match scheduled',
+    };
+  }
+
+  return {
+    actionLabel: 'View Activities',
+    description: getStatusLabel(match),
+    title: 'Match update',
+  };
 }
 
 function isCurrentUserMatchPlayer(match: Match, currentUserId: string) {
