@@ -2021,11 +2021,39 @@ function PyramidLadder({
 }: FullLadderSectionProps) {
   const rows = getPyramidRows(players);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const initialMobileCenterRef = useRef<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const cardWidth = `${10 * zoom}rem`;
   const cardMinHeight = `${10.5 * zoom}rem`;
   const rowGap = `${1.25 * zoom}rem`;
   const cardGap = `${0.75 * zoom}rem`;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (!window.matchMedia('(max-width: 767px)').matches) {
+      return;
+    }
+
+    const centerKey = currentPlayer?.id ?? 'pyramid-middle';
+
+    if (initialMobileCenterRef.current === centerKey) {
+      return;
+    }
+
+    if (!currentPlayer && initialMobileCenterRef.current) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      centerPyramidView('auto');
+      initialMobileCenterRef.current = centerKey;
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [currentPlayer?.id, players.length]);
 
   function zoomIn() {
     setZoom((current) => Math.min(1.45, Number((current + 0.1).toFixed(2))));
@@ -2039,11 +2067,20 @@ function PyramidLadder({
     setZoom(1);
   }
 
-  function centerOnMyPosition() {
+  function centerPyramidView(behavior: ScrollBehavior = 'smooth') {
     const container = scrollContainerRef.current;
     const currentCard = container?.querySelector<HTMLElement>('[data-current-player="true"]');
 
-    if (!container || !currentCard) {
+    if (!container) {
+      return;
+    }
+
+    if (!currentCard) {
+      container.scrollTo({
+        left: Math.max(0, (container.scrollWidth - container.clientWidth) / 2),
+        top: 0,
+        behavior,
+      });
       return;
     }
 
@@ -2057,8 +2094,12 @@ function PyramidLadder({
     container.scrollTo({
       left: Math.max(0, cardCenterX - container.clientWidth / 2),
       top: Math.max(0, cardCenterY - container.clientHeight / 2),
-      behavior: 'smooth',
+      behavior,
     });
+  }
+
+  function centerOnMyPosition() {
+    centerPyramidView('smooth');
   }
 
   return (
@@ -2104,7 +2145,7 @@ function PyramidLadder({
           onClick={centerOnMyPosition}
           disabled={!currentPlayer}
         >
-          Center on My Position
+          Find My Rank
         </button>
         <span className="rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-ink-700 shadow-sm">
           {Math.round(zoom * 100)}%
