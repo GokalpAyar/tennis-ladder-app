@@ -51,11 +51,9 @@ type RankingDraft = {
 
 type AdminTab =
   | 'pending'
-  | 'approved'
+  | 'players'
   | 'ladder'
-  | 'scheduled'
-  | 'active'
-  | 'completed'
+  | 'matches'
   | 'settings';
 type MatchFilter = 'all' | MatchStatus;
 
@@ -107,6 +105,21 @@ function AdminPage() {
   const approvedProfiles = useMemo(() => {
     return profiles.filter((profile) => profile.status === 'approved');
   }, [profiles]);
+
+  const filteredApprovedProfiles = useMemo(() => {
+    const query = playerSearch.trim().toLowerCase();
+
+    if (!query) {
+      return approvedProfiles;
+    }
+
+    return approvedProfiles.filter((profile) =>
+      [profile.full_name ?? '', profile.email ?? '', profile.role ?? '', profile.status ?? '', profile.id]
+        .join(' ')
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [approvedProfiles, playerSearch]);
 
   const activeChallengeMatches = useMemo(() => {
     return matches.filter((match) =>
@@ -189,20 +202,8 @@ function AdminPage() {
   }, [matches]);
 
   const visibleAdminMatches = useMemo(() => {
-    if (activeTab === 'scheduled') {
-      return scheduledMatches;
-    }
-
-    if (activeTab === 'active') {
-      return activeChallengeMatches;
-    }
-
-    if (activeTab === 'completed') {
-      return completedMatches;
-    }
-
     return filteredMatches;
-  }, [activeChallengeMatches, activeTab, completedMatches, filteredMatches, scheduledMatches]);
+  }, [filteredMatches]);
 
   async function loadAdminData() {
     setIsLoading(true);
@@ -577,39 +578,34 @@ function AdminPage() {
 
   return (
     <main className="min-h-screen bg-[#f6f7fb] px-4 py-5 text-ink-900 sm:px-6 lg:px-8">
-      <section className="mx-auto w-full max-w-[94rem] space-y-5">
-        <header className="overflow-hidden rounded-[2rem] border border-slate-800 bg-slate-950 text-white shadow-xl shadow-slate-900/20">
-          <div className="flex flex-col gap-6 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
+      <section className="mx-auto w-full max-w-[88rem] space-y-5">
+        <header className="rounded-[1.75rem] border border-slate-800 bg-slate-950 px-5 py-6 text-white shadow-lg shadow-slate-900/15 sm:px-7">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-start gap-4">
-              <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-court-500 text-white shadow-lg shadow-black/15">
+              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-court-500 text-white shadow-sm">
                 <AdminIcon />
               </span>
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-white/60">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-white/55">
                   Staff Workspace
                 </p>
                 <h1 className="mt-1 text-3xl font-black tracking-tight text-white sm:text-4xl">
                   Admin Control Center
                 </h1>
-                <p className="mt-2 text-sm leading-6 text-white/75">
-                  A clean workspace for player records, ladder order, match status, and season controls.
+                <p className="mt-2 text-sm font-medium text-white/70">
+                  Manage players, rankings, and matches
                 </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <AdminHeaderPill label="Ranked" value={rankings.length} />
-                  <AdminHeaderPill label="Profiles" value={profiles.length} />
-                  <AdminHeaderPill label="Active Matches" value={matchStatusCounts.pending + matchStatusCounts.accepted + matchStatusCounts.time_proposed + matchStatusCounts.scheduled} />
-                </div>
               </div>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Link className="btn-secondary" to="/dashboard">
+            <div className="flex flex-wrap gap-2">
+              <Link className="admin-soft-button border-white/20 bg-white/10 text-white hover:bg-white/15" to="/dashboard">
                 Preview Dashboard
               </Link>
-              <Link className="btn-secondary" to="/ladder">
+              <Link className="admin-soft-button border-white/20 bg-white/10 text-white hover:bg-white/15" to="/ladder">
                 Preview Ladder
               </Link>
               <button
-                className="rounded-full border border-white/20 px-5 py-3 text-sm font-extrabold text-white transition hover:bg-white/10"
+                className="admin-soft-button border-white/20 bg-transparent text-white hover:bg-white/10"
                 type="button"
                 onClick={handleLogout}
               >
@@ -621,10 +617,10 @@ function AdminPage() {
 
         {(message || errorMessage) && (
           <div
-            className={`whitespace-pre-line rounded-2xl border px-5 py-4 text-sm font-medium shadow-sm ${
+            className={`whitespace-pre-line rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm ${
               errorMessage
-                ? 'border-red-300 bg-red-50 text-red-700'
-                : 'border-court-500 bg-court-100 text-court-700'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : 'border-blue-200 bg-blue-50 text-court-900'
             }`}
             role={errorMessage ? 'alert' : 'status'}
           >
@@ -633,31 +629,30 @@ function AdminPage() {
         )}
 
         {isLoading ? (
-          <div className="premium-card rounded-3xl p-8 text-sm font-medium text-ink-700">
+          <div className="rounded-3xl border border-line-200 bg-white p-8 text-sm font-semibold text-ink-700 shadow-sm">
             Loading admin data...
           </div>
         ) : (
           <>
-            <section className="grid gap-4 md:grid-cols-3">
-              <AdminStatCard label="Ranked Players" value={rankings.length} />
-              <AdminStatCard label="Profiles" value={profiles.length} />
-              <AdminStatCard label="Matches" value={matches.length} />
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <AdminStatCard label="Pending Players" value={pendingProfiles.length} />
+              <AdminStatCard label="Approved Players" value={approvedProfiles.length} />
+              <AdminStatCard label="Active Matches" value={activeChallengeMatches.length} />
+              <AdminStatCard label="Scheduled Matches" value={scheduledMatches.length} />
             </section>
 
-            <nav className="grid gap-2 rounded-[1.5rem] border border-line-200 bg-white p-2 shadow-sm sm:grid-cols-2 lg:grid-cols-7">
+            <nav className="grid gap-2 rounded-3xl border border-line-200 bg-white p-2 shadow-sm sm:grid-cols-5">
               {([
-                ['pending', 'Pending Players'],
-                ['approved', 'Approved Players'],
-                ['ladder', 'Ladder Rankings'],
-                ['scheduled', 'Scheduled Matches'],
-                ['active', 'Active Challenges'],
-                ['completed', 'Completed Matches'],
+                ['pending', 'Pending'],
+                ['players', 'Players'],
+                ['ladder', 'Ladder'],
+                ['matches', 'Matches'],
                 ['settings', 'Settings'],
               ] as const).map(([tab, label]) => (
                 <button
-                  className={`rounded-2xl px-4 py-3 text-sm font-black transition ${
+                  className={`rounded-2xl px-3 py-2.5 text-sm font-black transition ${
                     activeTab === tab
-                      ? 'bg-slate-950 text-white shadow-sm'
+                      ? 'bg-court-900 text-white shadow-sm'
                       : 'text-ink-700 hover:bg-slate-100 hover:text-ink-900'
                   }`}
                   key={tab}
@@ -670,43 +665,43 @@ function AdminPage() {
             </nav>
 
             {activeTab === 'pending' && (
-              <section className="rounded-[2rem] border border-line-200 bg-white p-5 shadow-sm sm:p-8">
+              <section className="admin-panel">
                 <SectionHeader
                   title="Pending Players"
-                  description="Approve new registrations, assign a starting rank, or reject requests that should not enter the ladder."
+                  description="Review new registrations and assign a starting ladder rank."
                 />
                 <div className="mt-5 grid gap-3">
                   {pendingProfiles.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-line-200 bg-court-50 px-5 py-8 text-center text-sm font-medium text-ink-700">
-                      No registrations are pending approval.
-                    </p>
+                    <AdminEmptyState message="No players are waiting for approval." />
                   ) : (
                     pendingProfiles.map((profile) => {
                       const approveKey = `approve-${profile.id}`;
                       const rejectKey = `reject-${profile.id}`;
 
                       return (
-                        <div
-                          className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm lg:grid-cols-[1fr_8rem_auto_auto] lg:items-end"
+                        <article
+                          className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_8rem_auto_auto] lg:items-end"
                           key={profile.id}
                         >
-                          <div>
-                            <p className="font-black text-ink-900">{getProfileName(profile)}</p>
-                            <p className="mt-1 text-sm text-ink-700">
-                              Email: {profile.email ?? 'Not stored'}
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-black text-ink-900">
+                              {getProfileName(profile)}
                             </p>
-                            <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-court-700">
-                              Pending approval
+                            <p className="mt-1 truncate text-sm font-semibold text-ink-700">
+                              {profile.email ?? 'Email not stored'}
+                            </p>
+                            <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-ink-500">
+                              Signup date unavailable
                             </p>
                           </div>
                           <NumberInput
-                            label="Start Rank"
+                            label="Rank"
                             min={1}
                             value={approvalRankDrafts[profile.id] ?? rankings.length + 1}
                             onChange={(value) => updateApprovalRankDraft(profile.id, value)}
                           />
                           <button
-                            className="rounded-full bg-court-500 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="admin-primary-button"
                             type="button"
                             onClick={() => approvePlayer(profile.id)}
                             disabled={actionId === approveKey}
@@ -714,14 +709,14 @@ function AdminPage() {
                             {actionId === approveKey ? 'Approving...' : 'Approve'}
                           </button>
                           <button
-                            className="rounded-full border border-red-200 bg-white px-5 py-3 text-sm font-extrabold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="admin-danger-button"
                             type="button"
                             onClick={() => rejectPlayer(profile.id)}
                             disabled={actionId === rejectKey}
                           >
                             {actionId === rejectKey ? 'Rejecting...' : 'Reject'}
                           </button>
-                        </div>
+                        </article>
                       );
                     })
                   )}
@@ -729,52 +724,58 @@ function AdminPage() {
               </section>
             )}
 
-            {activeTab === 'approved' && (
-              <section className="rounded-[2rem] border border-line-200 bg-white p-5 shadow-sm sm:p-8">
-                <SectionHeader
-                  title="Approved Players"
-                  description="Edit player names, view email, change role, and add approved players to the ladder."
-                />
+            {activeTab === 'players' && (
+              <section className="admin-panel">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <SectionHeader
+                    title="Players"
+                    description="Search, edit names, review status, and manage roles."
+                  />
+                  <AdminSearchInput
+                    value={playerSearch}
+                    onChange={setPlayerSearch}
+                    placeholder="Search name, email, status, or role"
+                  />
+                </div>
                 <div className="mt-5 grid gap-3">
-                  {approvedProfiles.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-line-200 bg-court-50 px-5 py-8 text-center text-sm font-medium text-ink-700">
-                      No approved players yet.
-                    </p>
+                  {filteredApprovedProfiles.length === 0 ? (
+                    <AdminEmptyState message="No approved players match this search." />
                   ) : (
-                    approvedProfiles.map((profile) => {
+                    filteredApprovedProfiles.map((profile) => {
                       const isRanked = rankedPlayerIds.has(profile.id);
                       const saveKey = `profile-${profile.id}`;
 
                       return (
-                        <div
-                          className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm lg:grid-cols-[1fr_minmax(14rem,1fr)_9rem_auto] lg:items-end"
+                        <article
+                          className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm xl:grid-cols-[minmax(0,1fr)_minmax(12rem,1fr)_8rem_8rem_auto] xl:items-end"
                           key={profile.id}
                         >
-                          <div>
-                            <p className="font-black text-ink-900">{getProfileName(profile)}</p>
-                            <p className="mt-1 text-sm text-ink-700">
-                              Email: {profile.email ?? 'Not stored'}
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-black text-ink-900">
+                              {getProfileName(profile)}
                             </p>
-                            <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-court-700">
-                              {isRanked ? 'On ladder' : 'Not ranked'}
+                            <p className="mt-1 truncate text-xs font-semibold text-ink-600">
+                              {profile.email ?? 'Email not stored'}
+                            </p>
+                            <p className="mt-2">
+                              <StatusPill label={isRanked ? 'On ladder' : 'Not ranked'} />
                             </p>
                           </div>
                           <label className="block">
-                            <span className="text-xs font-bold uppercase text-ink-700">
-                              Player Name
-                            </span>
+                            <span className="admin-label">Full Name</span>
                             <input
-                              className="mt-1 w-full rounded-xl border border-line-200 bg-white px-4 py-3 text-sm font-semibold text-ink-900"
+                              className="admin-input mt-1"
                               value={profileNameDrafts[profile.id] ?? ''}
                               onChange={(event) =>
                                 updateProfileNameDraft(profile.id, event.target.value)
                               }
                             />
                           </label>
-                          <div>
-                            <p className="text-xs font-bold uppercase text-ink-700">Role</p>
+                          <ReadOnlyField label="Status" value={profile.status ?? 'unknown'} />
+                          <label className="block">
+                            <span className="admin-label">Role</span>
                             <select
-                              className="mt-1 w-full rounded-xl border border-line-200 bg-white px-3 py-3 text-sm font-semibold text-ink-900"
+                              className="admin-input mt-1"
                               value={profile.role ?? 'player'}
                               onChange={(event) =>
                                 updateProfileRole(profile.id, event.target.value as ProfileRole)
@@ -784,37 +785,37 @@ function AdminPage() {
                               <option value="player">Player</option>
                               <option value="admin">Admin</option>
                             </select>
-                          </div>
-                          <div className="grid gap-2">
+                          </label>
+                          <div className="flex flex-wrap gap-2 xl:justify-end">
                             <button
-                              className="rounded-full bg-court-500 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="admin-primary-button"
                               type="button"
                               onClick={() => saveProfileName(profile.id)}
                               disabled={actionId === saveKey}
                             >
-                              {actionId === saveKey ? 'Saving...' : 'Save Name'}
+                              {actionId === saveKey ? 'Saving...' : 'Save'}
                             </button>
                             {isRanked ? (
                               <button
-                                className="rounded-full border border-red-200 bg-white px-5 py-3 text-sm font-extrabold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="admin-danger-button"
                                 type="button"
                                 onClick={() => removePlayerFromLadder(profile.id)}
                                 disabled={actionId === profile.id}
                               >
-                                Remove from Ladder
+                                Remove
                               </button>
                             ) : (
                               <button
-                                className="rounded-full border border-line-200 bg-white px-5 py-3 text-sm font-extrabold text-court-900 transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="admin-secondary-button"
                                 type="button"
                                 onClick={() => addPlayerToLadder(profile.id)}
                                 disabled={actionId === profile.id}
                               >
-                                Add to Ladder
+                                Add to Bottom
                               </button>
                             )}
                           </div>
-                        </div>
+                        </article>
                       );
                     })
                   )}
@@ -823,377 +824,253 @@ function AdminPage() {
             )}
 
             {activeTab === 'ladder' && (
-            <section className="rounded-[2rem] border border-line-200 bg-white p-5 shadow-sm sm:p-8">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                <SectionHeader
-                  title="Players & Rankings"
-                  description="Edit names, roles, ranks, wins, and losses from one focused workspace."
-                />
-                <label className="block w-full lg:max-w-sm">
-                  <span className="text-xs font-black uppercase tracking-[0.12em] text-ink-700">
-                    Search players
-                  </span>
-                  <input
-                    className="mt-2 w-full rounded-2xl border border-line-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-ink-900 outline-none transition focus:border-court-500 focus:bg-white focus:ring-2 focus:ring-court-100"
-                    placeholder="Name, rank, role, or user id"
-                    value={playerSearch}
-                    onChange={(event) => setPlayerSearch(event.target.value)}
+              <section className="admin-panel">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <SectionHeader
+                    title="Ladder Rankings"
+                    description="Adjust ranks, records, and ladder placement."
                   />
-                </label>
-              </div>
+                  <AdminSearchInput
+                    value={playerSearch}
+                    onChange={setPlayerSearch}
+                    placeholder="Search ranked players"
+                  />
+                </div>
+                <div className="mt-5 overflow-hidden rounded-2xl border border-line-200 bg-white">
+                  <div className="hidden grid-cols-[6rem_minmax(0,1fr)_9rem_18rem] gap-3 border-b border-line-200 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-ink-600 lg:grid">
+                    <span>Rank</span>
+                    <span>Player</span>
+                    <span>Record</span>
+                    <span className="text-right">Actions</span>
+                  </div>
+                  <div className="divide-y divide-line-200">
+                    {filteredRankings.length === 0 ? (
+                      <AdminEmptyState message="No ranked players match this search." />
+                    ) : (
+                      filteredRankings.map((ranking) => {
+                        const profile = profilesById.get(ranking.player_id);
+                        const rowActionId = `player-row-${ranking.player_id}`;
+                        const draft = rankingDrafts[ranking.id] ?? {
+                          rank_position: ranking.rank_position,
+                          wins: ranking.wins,
+                          losses: ranking.losses,
+                        };
+                        const rankTaken = rankings.some(
+                          (otherRanking) =>
+                            otherRanking.id !== ranking.id &&
+                            otherRanking.rank_position === draft.rank_position,
+                        );
 
-              <div className="mt-5 flex flex-wrap gap-2 text-xs font-black uppercase tracking-[0.1em] text-ink-700">
-                <span className="rounded-full bg-slate-100 px-3 py-1.5">
-                  {pendingProfiles.length} pending
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1.5">
-                  Showing {filteredRankings.length} ranked
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1.5">
-                  {filteredUnrankedProfiles.length} unranked
-                </span>
-              </div>
-
-              <div className="mt-6 rounded-2xl border border-court-100 bg-court-50 p-4 sm:p-5">
-                <SectionHeader
-                  title="Pending Players"
-                  description="Approve new registrations and assign their starting ladder rank."
-                />
-                <div className="mt-4 grid gap-3">
-                  {pendingProfiles.length === 0 ? (
-                    <p className="rounded-lg bg-white px-5 py-5 text-center text-sm font-medium text-ink-700">
-                      No registrations are pending approval.
-                    </p>
-                  ) : (
-                    pendingProfiles.map((profile) => {
-                      const actionKey = `approve-${profile.id}`;
-
-                      return (
+                        return (
+                          <article
+                            className="grid gap-4 px-4 py-4 lg:grid-cols-[6rem_minmax(0,1fr)_9rem_18rem] lg:items-center"
+                            key={ranking.id}
+                          >
+                            <div>
+                              <NumberInput
+                                label="Rank"
+                                min={1}
+                                value={draft.rank_position}
+                                onChange={(value) => updateDraft(ranking.id, 'rank_position', value)}
+                              />
+                              {rankTaken && (
+                                <p className="mt-1 text-xs font-bold text-amber-700">
+                                  Rank is taken. Saving will reorder players.
+                                </p>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-black text-ink-900">
+                                {getProfileName(profile)}
+                              </p>
+                              <p className="mt-1 truncate text-xs font-semibold text-ink-600">
+                                {profile?.email ?? 'Email not stored'}
+                              </p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
+                              <NumberInput
+                                label="Wins"
+                                min={0}
+                                value={draft.wins}
+                                onChange={(value) => updateDraft(ranking.id, 'wins', value)}
+                              />
+                              <NumberInput
+                                label="Losses"
+                                min={0}
+                                value={draft.losses}
+                                onChange={(value) => updateDraft(ranking.id, 'losses', value)}
+                              />
+                            </div>
+                            <div className="flex flex-wrap gap-2 lg:justify-end">
+                              <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-black text-ink-700">
+                                {draft.wins}-{draft.losses}
+                              </span>
+                              <button
+                                className="admin-primary-button"
+                                type="button"
+                                onClick={() => updatePlayerManagementRow(ranking)}
+                                disabled={actionId === rowActionId}
+                              >
+                                {actionId === rowActionId ? 'Saving...' : 'Save'}
+                              </button>
+                              <button
+                                className="admin-danger-button"
+                                type="button"
+                                onClick={() => removePlayerFromLadder(ranking.player_id)}
+                                disabled={actionId === ranking.player_id}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+                {filteredUnrankedProfiles.length > 0 && (
+                  <div className="mt-5 rounded-2xl border border-dashed border-line-200 bg-slate-50 p-4">
+                    <p className="text-sm font-black text-ink-900">Approved players not on ladder</p>
+                    <div className="mt-3 grid gap-2">
+                      {filteredUnrankedProfiles.map((profile) => (
                         <div
-                          className="grid gap-4 rounded-xl border border-line-200 bg-white px-4 py-4 lg:grid-cols-[1fr_8rem_auto] lg:items-end"
+                          className="flex flex-col gap-3 rounded-xl bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                           key={profile.id}
                         >
                           <div>
-                            <p className="font-black text-ink-900">{getProfileName(profile)}</p>
-                            <p className="mt-1 text-sm text-ink-700">
-                              Email: {profile.email ?? 'Not stored'}
-                            </p>
-                            <p className="mt-1 break-all text-xs text-ink-700">
-                              User ID: {profile.id}
-                            </p>
+                            <p className="text-sm font-bold text-ink-900">{getProfileName(profile)}</p>
+                            <p className="text-xs text-ink-600">{profile.email ?? 'Email not stored'}</p>
                           </div>
-                          <NumberInput
-                            label="Start Rank"
-                            min={1}
-                            value={approvalRankDrafts[profile.id] ?? rankings.length + 1}
-                            onChange={(value) => updateApprovalRankDraft(profile.id, value)}
-                          />
                           <button
-                            className="rounded-full bg-court-500 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="admin-secondary-button"
                             type="button"
-                            onClick={() => approvePlayer(profile.id)}
-                            disabled={actionId === actionKey}
+                            onClick={() => addPlayerToLadder(profile.id)}
+                            disabled={actionId === profile.id}
                           >
-                            {actionId === actionKey ? 'Approving...' : 'Approve Player'}
+                            Add to Bottom
                           </button>
                         </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-3">
-                {filteredRankings.map((ranking) => {
-                  const profile = profilesById.get(ranking.player_id);
-                  const rowActionId = `player-row-${ranking.player_id}`;
-                  const draft = rankingDrafts[ranking.id] ?? {
-                    rank_position: ranking.rank_position,
-                    wins: ranking.wins,
-                    losses: ranking.losses,
-                  };
-
-                  return (
-                    <div
-                      className="rounded-2xl border border-line-200 bg-white p-4 shadow-sm transition hover:border-court-500/70 hover:shadow-md"
-                      key={ranking.id}
-                    >
-                      <div className="flex flex-col gap-4 border-b border-line-200 pb-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="flex items-start gap-4">
-                          <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-slate-950 text-lg font-black text-white">
-                            #{ranking.rank_position}
-                          </div>
-                          <div>
-                            <p className="text-xs font-black uppercase tracking-[0.12em] text-court-700">
-                              Player
-                            </p>
-                            <h3 className="mt-1 text-lg font-black text-ink-900">
-                              {getProfileName(profile)}
-                            </h3>
-                            <p className="mt-1 break-all text-xs text-ink-700">
-                              Email: {profile?.email ?? 'Not stored'}
-                            </p>
-                            <p className="mt-1 break-all text-xs text-ink-700">
-                              User ID: {ranking.player_id}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <AdminMiniBadge label="Record" value={`${ranking.wins}-${ranking.losses}`} />
-                          <AdminMiniBadge label="Role" value={profile?.role ?? 'player'} />
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(14rem,1.5fr)_8rem_7rem_7rem_8rem_10rem] xl:items-end">
-                        <label className="block">
-                          <span className="text-xs font-bold uppercase text-ink-700">
-                            Player Name
-                          </span>
-                          <input
-                            className="mt-1 w-full rounded-md border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900"
-                            value={profileNameDrafts[ranking.player_id] ?? ''}
-                            onChange={(event) =>
-                              updateProfileNameDraft(ranking.player_id, event.target.value)
-                            }
-                          />
-                        </label>
-                        <NumberInput
-                          label="Rank"
-                          min={1}
-                          value={draft.rank_position}
-                          onChange={(value) => updateDraft(ranking.id, 'rank_position', value)}
-                        />
-                        <NumberInput
-                          label="Wins"
-                          min={0}
-                          value={draft.wins}
-                          onChange={(value) => updateDraft(ranking.id, 'wins', value)}
-                        />
-                        <NumberInput
-                          label="Losses"
-                          min={0}
-                          value={draft.losses}
-                          onChange={(value) => updateDraft(ranking.id, 'losses', value)}
-                        />
-                        <div>
-                          <p className="text-xs font-bold uppercase text-ink-700">Role</p>
-                          <select
-                            className="mt-1 w-full rounded-md border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900"
-                            value={profile?.role ?? 'player'}
-                            onChange={(event) =>
-                              updateProfileRole(ranking.player_id, event.target.value as ProfileRole)
-                            }
-                            disabled={actionId === ranking.player_id}
-                          >
-                            <option value="player">Player</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                        </div>
-                        <div className="grid gap-2">
-                          <button
-                            className="rounded-full bg-court-500 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
-                            type="button"
-                            onClick={() => updatePlayerManagementRow(ranking)}
-                            disabled={actionId === rowActionId}
-                          >
-                            {actionId === rowActionId ? 'Saving...' : 'Save Changes'}
-                          </button>
-                          <button
-                            className="rounded-full border border-red-200 bg-white px-5 py-3 text-sm font-extrabold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                            type="button"
-                            onClick={() => removePlayerFromLadder(ranking.player_id)}
-                            disabled={actionId === ranking.player_id}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  );
-                })}
-                {filteredRankings.length === 0 && (
-                  <p className="rounded-2xl border border-dashed border-line-200 bg-slate-50 px-5 py-8 text-center text-sm font-medium text-ink-700">
-                    No ranked players match your search.
-                  </p>
+                  </div>
                 )}
-              </div>
+              </section>
+            )}
 
-              <div className="mt-8 rounded-2xl border border-dashed border-line-200 bg-slate-50 p-4 sm:p-5">
-                <SectionHeader
-                  title="Add Players to Ladder"
-                  description="Profiles that are not ranked yet can be added at the bottom of the ladder."
-                />
-                <div className="mt-4 grid gap-3">
-                  {filteredUnrankedProfiles.length === 0 ? (
-                    <p className="rounded-lg bg-white px-5 py-5 text-center text-sm font-medium text-ink-700">
-                      No unranked profiles match this view.
-                    </p>
-                  ) : (
-                    filteredUnrankedProfiles.map((profile) => (
-                      <div
-                        className="flex flex-col gap-3 rounded-xl border border-line-200 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
-                        key={profile.id}
+            {activeTab === 'matches' && (
+              <section className="admin-panel">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <SectionHeader
+                    title="Matches"
+                    description="Review match status, scheduled times, and cancellations."
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      ['all', 'All'],
+                      ['pending', 'Pending'],
+                      ['accepted', 'Accepted'],
+                      ['time_proposed', 'Time Proposed'],
+                      ['scheduled', 'Scheduled'],
+                      ['completed', 'Completed'],
+                      ['canceled', 'Canceled'],
+                    ] as const).map(([filter, label]) => (
+                      <button
+                        className={`rounded-full px-3 py-2 text-xs font-black transition ${
+                          matchFilter === filter
+                            ? 'bg-court-900 text-white'
+                            : 'border border-line-200 bg-white text-ink-700 hover:bg-slate-100'
+                        }`}
+                        key={filter}
+                        type="button"
+                        onClick={() => setMatchFilter(filter)}
                       >
-                        <div>
-                          <p className="font-bold text-ink-900">{getProfileName(profile)}</p>
-                          <p className="mt-1 text-sm text-ink-700">
-                            Email: {profile.email ?? 'Not stored'}
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                  <AdminStatusCard label="Active" value={activeChallengeMatches.length} />
+                  <AdminStatusCard label="Scheduled" value={scheduledMatches.length} />
+                  <AdminStatusCard label="Completed" value={completedMatches.length} />
+                </div>
+                <div className="mt-5 grid gap-3">
+                  {visibleAdminMatches.length === 0 ? (
+                    <AdminEmptyState message="No matches match this filter." />
+                  ) : (
+                    visibleAdminMatches.map((match) => (
+                      <article
+                        className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_11rem_auto] lg:items-center"
+                        key={match.id}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate text-sm font-black text-ink-900">
+                              {getProfileName(profilesById.get(match.challenger_id))} vs{' '}
+                              {getProfileName(profilesById.get(match.opponent_id))}
+                            </p>
+                            <StatusPill label={getMatchStatusLabel(match.status)} />
+                          </div>
+                          <p className="mt-1 text-sm font-semibold text-ink-700">
+                            {formatMatchWindow(match)}
                           </p>
-                          <p className="mt-1 break-all text-xs text-ink-700">
-                            User ID: {profile.id}
-                          </p>
+                          {match.winner_id && (
+                            <p className="mt-1 text-xs font-bold text-ink-600">
+                              Winner: {getProfileName(profilesById.get(match.winner_id))}
+                            </p>
+                          )}
                         </div>
-                        <button
-                          className="rounded-full bg-court-900 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
-                          type="button"
-                          onClick={() => addPlayerToLadder(profile.id)}
-                          disabled={actionId === profile.id}
+                        <select
+                          className="admin-input"
+                          value={match.status}
+                          onChange={(event) =>
+                            updateMatchStatus(match.id, event.target.value as MatchStatus)
+                          }
+                          disabled={actionId === match.id}
                         >
-                          Add to Ladder
+                          <option value="pending">Pending</option>
+                          <option value="accepted">Accepted</option>
+                          <option value="time_proposed">Time Proposed</option>
+                          <option value="declined">Declined</option>
+                          <option value="scheduled">Scheduled</option>
+                          <option value="completed" disabled>
+                            Completed (winner required)
+                          </option>
+                          <option value="canceled">Canceled</option>
+                          <option value="expired">Expired</option>
+                        </select>
+                        <button
+                          className="admin-danger-button"
+                          type="button"
+                          onClick={() => cancelMatch(match.id)}
+                          disabled={actionId === match.id || match.status === 'canceled'}
+                        >
+                          Cancel
                         </button>
-                      </div>
+                      </article>
                     ))
                   )}
                 </div>
-              </div>
-            </section>
-            )}
-
-            {(activeTab === 'scheduled' || activeTab === 'active' || activeTab === 'completed') && (
-            <section className="rounded-[2rem] border border-line-200 bg-white p-5 shadow-sm sm:p-8">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                <SectionHeader
-                  title={
-                    activeTab === 'scheduled'
-                      ? 'Scheduled Matches'
-                      : activeTab === 'active'
-                        ? 'Active Challenges'
-                        : 'Completed Matches'
-                  }
-                  description={
-                    activeTab === 'scheduled'
-                      ? 'View scheduled match times, reservation reminders, and match status controls.'
-                      : activeTab === 'active'
-                        ? 'Review pending, accepted, and time-proposed challenges that are still in progress.'
-                        : 'Review completed matches and final winner records.'
-                  }
-                />
-                <div className="flex flex-wrap gap-2">
-                  {([
-                    ['all', 'All'],
-                    ['pending', 'Pending'],
-                    ['scheduled', 'Scheduled'],
-                    ['completed', 'Completed'],
-                    ['canceled', 'Canceled'],
-                    ['expired', 'Expired'],
-                  ] as const).map(([filter, label]) => (
-                    <button
-                      className={`rounded-full px-4 py-2 text-sm font-black transition ${
-                        matchFilter === filter
-                          ? 'bg-slate-950 text-white'
-                          : 'border border-line-200 bg-white text-ink-700 hover:bg-slate-100'
-                      }`}
-                      key={filter}
-                      type="button"
-                      onClick={() => setMatchFilter(filter)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <AdminStatusCard label="Pending" value={matchStatusCounts.pending} />
-                <AdminStatusCard label="Scheduled" value={matchStatusCounts.scheduled} />
-                <AdminStatusCard label="Completed" value={matchStatusCounts.completed} />
-                <AdminStatusCard label="Canceled" value={matchStatusCounts.canceled} />
-              </div>
-              <div className="mt-5 space-y-3">
-                {visibleAdminMatches.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-line-200 bg-court-50 px-5 py-6 text-center text-sm font-medium text-ink-700">
-                    No matches match this view.
-                  </p>
-                ) : (
-                  visibleAdminMatches.map((match) => (
-                    <div
-                      className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm transition hover:border-court-500/70 lg:grid-cols-[1fr_auto_auto] lg:items-center"
-                      key={match.id}
-                    >
-                      <div>
-                        <p className="text-base font-black text-ink-900">
-                          {getProfileName(profilesById.get(match.challenger_id))} vs{' '}
-                          {getProfileName(profilesById.get(match.opponent_id))}
-                        </p>
-                        <p className="mt-1 text-sm text-ink-700">
-                          Match time: {formatMatchWindow(match)}
-                        </p>
-                        {match.status === 'scheduled' && (
-                          <p className="mt-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-bold text-court-900">
-                            Court Reservations: tennis@rotonpoint.org · 203-838-1606 ext. 101
-                          </p>
-                        )}
-                        {match.winner_id && (
-                          <p className="mt-2 text-sm font-bold text-ink-700">
-                            Winner: {getProfileName(profilesById.get(match.winner_id))}
-                          </p>
-                        )}
-                        <p className="mt-2">
-                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black uppercase text-ink-700">
-                            {getMatchStatusLabel(match.status)}
-                          </span>
-                        </p>
-                      </div>
-                      <select
-                        className="rounded-md border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900"
-                        value={match.status}
-                        onChange={(event) =>
-                          updateMatchStatus(match.id, event.target.value as MatchStatus)
-                        }
-                        disabled={actionId === match.id}
-                      >
-                        <option value="pending">Pending</option>
-                        <option value="accepted">Accepted</option>
-                        <option value="time_proposed">Time Proposed</option>
-                        <option value="declined">Declined</option>
-                        <option value="scheduled">Scheduled</option>
-                        <option value="completed" disabled>
-                          Completed (winner required)
-                        </option>
-                        <option value="canceled">Canceled</option>
-                        <option value="expired">Expired</option>
-                      </select>
-                      <button
-                        className="rounded-full border border-red-300 bg-white px-5 py-3 text-sm font-extrabold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        type="button"
-                        onClick={() => cancelMatch(match.id)}
-                        disabled={actionId === match.id || match.status === 'canceled'}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
+              </section>
             )}
 
             {activeTab === 'settings' && (
-              <section className="premium-card rounded-[2rem] p-6 sm:p-8">
+              <section className="admin-panel">
                 <SectionHeader
                   title="Settings"
-                  description="Season-level tools and dangerous actions live here."
+                  description="Season controls and dangerous actions."
                 />
                 <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-5">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                      <h3 className="text-lg font-black text-red-900">Reset Season</h3>
-                      <p className="mt-2 max-w-3xl text-sm leading-6 text-red-800">
-                        Sets all ladder wins/losses to 0 and cancels active or scheduled
-                        matches. Player ranks remain unchanged.
+                      <h3 className="text-base font-black text-red-900">Reset Season</h3>
+                      <p className="mt-1 max-w-2xl text-sm leading-6 text-red-800">
+                        Sets all records to 0-0 and cancels active or scheduled matches.
+                        Player ranks stay unchanged.
                       </p>
                     </div>
                     <button
-                      className="rounded-full bg-red-700 px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="admin-danger-solid-button"
                       type="button"
                       onClick={resetSeason}
                       disabled={actionId === 'reset-season'}
@@ -1226,6 +1103,55 @@ function SectionHeader({
   );
 }
 
+function AdminSearchInput({
+  onChange,
+  placeholder,
+  value,
+}: {
+  onChange: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  return (
+    <label className="block w-full lg:max-w-sm">
+      <span className="admin-label">Search</span>
+      <input
+        className="admin-input mt-1"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function AdminEmptyState({ message }: { message: string }) {
+  return (
+    <p className="rounded-2xl border border-dashed border-line-200 bg-slate-50 px-5 py-8 text-center text-sm font-semibold text-ink-700">
+      {message}
+    </p>
+  );
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="admin-label">{label}</p>
+      <p className="mt-1 rounded-xl border border-line-200 bg-slate-50 px-3 py-2 text-sm font-bold capitalize text-ink-800">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function StatusPill({ label }: { label: string }) {
+  return (
+    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-ink-700">
+      {label}
+    </span>
+  );
+}
+
 function AdminStatCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-[1.5rem] border border-line-200 bg-white p-5 shadow-sm">
@@ -1234,22 +1160,6 @@ function AdminStatCard({ label, value }: { label: string; value: number }) {
       </p>
       <p className="mt-2 text-3xl font-black text-ink-900">{value}</p>
     </div>
-  );
-}
-
-function AdminHeaderPill({ label, value }: { label: string; value: number }) {
-  return (
-    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.1em] text-white/85">
-      {label}: {value}
-    </span>
-  );
-}
-
-function AdminMiniBadge({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="rounded-full border border-line-200 bg-slate-50 px-3 py-1 text-xs font-black uppercase tracking-[0.08em] text-ink-700">
-      {label}: {value}
-    </span>
   );
 }
 

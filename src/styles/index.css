@@ -254,4 +254,116 @@
     color: var(--color-court-700);
     box-shadow: 0 9px 18px rgb(15 42 95 / 0.12);
   }
+
+  .admin-panel {
+    border: 1px solid var(--color-line-200);
+    border-radius: 1.5rem;
+    background: white;
+    padding: 1.25rem;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
+  }
+
+  @media (min-width: 640px) {
+    .admin-panel {
+      padding: 1.5rem;
+    }
+  }
+
+  .admin-label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-700);
+  }
+
+  .admin-input {
+    width: 100%;
+    border-radius: 0.8rem;
+    border: 1px solid var(--color-line-200);
+    background: white;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.88rem;
+    font-weight: 650;
+    color: var(--color-ink-900);
+    outline: none;
+  }
+
+  .admin-input:focus {
+    border-color: var(--color-court-500);
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 0.12);
+  }
+
+  .admin-soft-button,
+  .admin-primary-button,
+  .admin-secondary-button,
+  .admin-danger-button,
+  .admin-danger-solid-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.84rem;
+    font-weight: 800;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      opacity 160ms ease;
+  }
+
+  .admin-soft-button,
+  .admin-secondary-button,
+  .admin-danger-button {
+    border: 1px solid var(--color-line-200);
+    background: white;
+  }
+
+  .admin-primary-button {
+    border: 1px solid var(--color-court-500);
+    background: var(--color-court-500);
+    color: white;
+  }
+
+  .admin-primary-button:hover {
+    background: var(--color-court-700);
+    border-color: var(--color-court-700);
+  }
+
+  .admin-secondary-button {
+    color: var(--color-court-900);
+  }
+
+  .admin-secondary-button:hover {
+    border-color: var(--color-court-500);
+    background: var(--color-court-50);
+  }
+
+  .admin-danger-button {
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+
+  .admin-danger-button:hover {
+    background: #fef2f2;
+  }
+
+  .admin-danger-solid-button {
+    border: 1px solid #b91c1c;
+    background: #b91c1c;
+    color: white;
+  }
+
+  .admin-danger-solid-button:hover {
+    background: #991b1b;
+  }
+
+  .admin-primary-button:disabled,
+  .admin-secondary-button:disabled,
+  .admin-danger-button:disabled,
+  .admin-danger-solid-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
 }
