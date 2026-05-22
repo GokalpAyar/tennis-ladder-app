@@ -81,7 +81,7 @@ type PlayerAdminRow = {
 
 type ProfileConfirmAction =
   | { type: 'deactivate'; profile: Profile }
-  | { type: 'delete'; profile: Profile };
+  | { type: 'deleteAccount'; profile: Profile };
 
 function AdminPage() {
   const navigate = useNavigate();
@@ -512,8 +512,8 @@ function AdminPage() {
     setProfileConfirmAction({ type: 'deactivate', profile });
   }
 
-  function requestDeleteProfile(profile: Profile) {
-    setProfileConfirmAction({ type: 'delete', profile });
+  function requestDeleteAccount(profile: Profile) {
+    setProfileConfirmAction({ type: 'deleteAccount', profile });
   }
 
   async function confirmProfileManagementAction() {
@@ -546,48 +546,44 @@ function AdminPage() {
       return;
     }
 
-    const hasMatchHistory = matches.some(
+    const hasCompletedMatchHistory = matches.some(
       (match) =>
-        match.challenger_id === profile.id ||
-        match.opponent_id === profile.id ||
-        match.winner_id === profile.id ||
-        match.canceled_by === profile.id ||
-        match.proposed_by_player_id === profile.id,
+        match.status === 'completed' &&
+        (match.challenger_id === profile.id ||
+          match.opponent_id === profile.id ||
+          match.winner_id === profile.id),
     );
 
-    if (hasMatchHistory) {
+    if (hasCompletedMatchHistory) {
       setActionId(null);
       setProfileConfirmAction(null);
       setErrorMessage(
-        'This player has match history. Remove from ladder instead, or archive their profile.',
+        'This player has completed match history. Deactivate Account instead to preserve match history.',
       );
       return;
     }
 
-    const { error } = await supabase.rpc('admin_delete_player_profile', {
-      target_profile_id: profile.id,
+    const { data, error } = await supabase.functions.invoke<{
+      error?: string;
+      message?: string;
+    }>('delete-account-permanently', {
+      body: { targetProfileId: profile.id },
     });
 
     setActionId(null);
     setProfileConfirmAction(null);
 
     if (error) {
-      const details = [error.message, error.details, error.hint, error.code]
-        .filter(Boolean)
-        .join('\n');
-
-      if (error.message.includes('match history') || error.code === '23503') {
-        setErrorMessage(
-          'This player has match history. Remove from ladder instead, or archive their profile.',
-        );
-        return;
-      }
-
-      setErrorMessage(details || 'Unable to delete player profile.');
+      setErrorMessage(data?.error ?? error.message ?? 'Unable to delete account permanently.');
       return;
     }
 
-    setMessage('Player profile deleted. Supabase Auth account was not removed.');
+    if (data?.error) {
+      setErrorMessage(data.error);
+      return;
+    }
+
+    setMessage(data?.message ?? 'Account permanently deleted.');
     await loadAdminData();
   }
 
@@ -1069,15 +1065,15 @@ function AdminPage() {
                                   actionId === `deactivate-${profile.id}`
                                 }
                               >
-                                Deactivate
+                                Deactivate Account
                               </button>
                               <button
                                 className="admin-danger-button"
                                 type="button"
-                                onClick={() => requestDeleteProfile(profile)}
-                                disabled={actionId === `delete-${profile.id}`}
+                                onClick={() => requestDeleteAccount(profile)}
+                                disabled={actionId === `deleteAccount-${profile.id}`}
                               >
-                                Delete Profile
+                                Delete Account Permanently
                               </button>
                               <button
                                 className="admin-secondary-button"
@@ -1510,12 +1506,12 @@ function ProfileActionModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const isDelete = action.type === 'delete';
-  const title = isDelete ? 'Delete Profile' : 'Deactivate Player';
-  const confirmLabel = isDelete ? 'Delete Profile' : 'Deactivate Player';
-  const body = isDelete
-    ? 'This will remove the player profile and related ladder entry. Are you sure?'
-    : 'This will mark the player inactive and remove their ladder entry. Match history will stay in place.';
+  const isPermanentDelete = action.type === 'deleteAccount';
+  const title = isPermanentDelete ? 'Delete Account Permanently' : 'Deactivate Account';
+  const confirmLabel = isPermanentDelete ? 'Delete Account Permanently' : 'Deactivate Account';
+  const body = isPermanentDelete
+    ? 'This will permanently delete the user account, profile, ladder entry, and access. This cannot be undone.'
+    : 'This will mark the player inactive and remove their ladder entry. Match history and the Supabase Auth account will stay in place.';
 
   return (
     <div
@@ -1552,10 +1548,10 @@ function ProfileActionModal({
           </p>
         </div>
         <p className="mt-4 text-sm leading-6 text-ink-700">{body}</p>
-        {isDelete && (
+        {isPermanentDelete && (
           <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-            Prefer Deactivate Player when the member has match history. Permanent delete does
-            not remove their Supabase Auth account.
+            Prefer Deactivate Account when the member has match history. Permanent delete is
+            blocked for completed match history so club records stay intact.
           </p>
         )}
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -1568,7 +1564,7 @@ function ProfileActionModal({
             Keep Player
           </button>
           <button
-            className={isDelete ? 'admin-danger-solid-button' : 'admin-primary-button'}
+            className={isPermanentDelete ? 'admin-danger-solid-button' : 'admin-primary-button'}
             type="button"
             onClick={onConfirm}
             disabled={isSaving}
