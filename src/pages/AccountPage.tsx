@@ -16,6 +16,16 @@ type Ranking = {
   wins: number | null;
 };
 
+type ProfileResult = {
+  data: Profile | null;
+  error: {
+    code?: string;
+    details?: string;
+    hint?: string;
+    message?: string;
+  } | null;
+};
+
 function AccountPage() {
   const { session } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -134,8 +144,10 @@ function AccountPage() {
       return;
     }
 
-    setProfile(data);
-    setFullName(data.full_name ?? '');
+    const updatedProfile = toProfile(data);
+
+    setProfile(updatedProfile);
+    setFullName(updatedProfile.full_name ?? '');
     setProfileMessage('Profile updated successfully.');
   }
 
@@ -343,7 +355,7 @@ function AccountPage() {
   );
 }
 
-async function ensureProfile(user: User) {
+async function ensureProfile(user: User): Promise<ProfileResult> {
   const profileResult = await supabase
     .from('profiles')
     .select('full_name, email, status')
@@ -351,7 +363,10 @@ async function ensureProfile(user: User) {
     .maybeSingle();
 
   if (profileResult.error || profileResult.data) {
-    return profileResult;
+    return {
+      data: profileResult.data ? toProfile(profileResult.data) : null,
+      error: profileResult.error,
+    };
   }
 
   const fallbackName =
@@ -375,7 +390,20 @@ async function ensureProfile(user: User) {
     console.error('Account profile creation error:', createResult.error);
   }
 
-  return createResult;
+  return {
+    data: createResult.data ? toProfile(createResult.data) : null,
+    error: createResult.error,
+  };
+}
+
+function toProfile(row: unknown): Profile {
+  const profileRow = row as Partial<Profile>;
+
+  return {
+    email: profileRow.email ?? null,
+    full_name: profileRow.full_name ?? null,
+    status: profileRow.status ?? null,
+  };
 }
 
 function AccountStat({ label, value }: { label: string; value: string }) {
