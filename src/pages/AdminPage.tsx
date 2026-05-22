@@ -40,6 +40,7 @@ type Match = {
   scheduled_match_ends_at: string | null;
   cancel_reason?: string | null;
   canceled_at?: string | null;
+  canceled_by?: string | null;
   winner_id?: string | null;
   created_at: string;
 };
@@ -340,7 +341,7 @@ function AdminPage() {
         .order('rank_position', { ascending: true }),
       supabase
         .from('matches')
-        .select('id, challenger_id, opponent_id, status, proposed_match_at, proposed_by_player_id, scheduled_match_ends_at, cancel_reason, canceled_at, winner_id, created_at')
+        .select('id, challenger_id, opponent_id, status, proposed_match_at, proposed_by_player_id, scheduled_match_ends_at, cancel_reason, canceled_at, canceled_by, winner_id, created_at')
         .order('created_at', { ascending: false }),
     ]);
 
