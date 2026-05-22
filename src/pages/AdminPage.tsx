@@ -36,6 +36,7 @@ type Match = {
   opponent_id: string;
   status: MatchStatus;
   proposed_match_at: string | null;
+  proposed_by_player_id: string | null;
   scheduled_match_ends_at: string | null;
   cancel_reason?: string | null;
   canceled_at?: string | null;
@@ -55,7 +56,28 @@ type AdminTab =
   | 'ladder'
   | 'matches'
   | 'settings';
-type MatchFilter = 'all' | MatchStatus;
+type MatchFilter = 'all' | 'needs_action' | 'scheduled' | 'completed' | 'problems';
+
+type StatusTone = 'yellow' | 'green' | 'blue' | 'purple' | 'gray' | 'red';
+
+type StatusInfo = {
+  label: string;
+  tone: StatusTone;
+};
+
+type PlayerStatusKey =
+  | 'pending_approval'
+  | 'available'
+  | 'active_match'
+  | 'scheduled_match'
+  | 'inactive';
+
+type PlayerAdminRow = {
+  profile: Profile;
+  ranking: LadderRanking | undefined;
+  status: StatusInfo;
+  statusKey: PlayerStatusKey;
+};
 
 function AdminPage() {
   const navigate = useNavigate();
@@ -69,7 +91,9 @@ function AdminPage() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>('pending');
   const [playerSearch, setPlayerSearch] = useState('');
-  const [matchFilter, setMatchFilter] = useState<MatchFilter>('all');
+  const [matchFilter, setMatchFilter] = useState<MatchFilter>('needs_action');
+  const [activityPlayerId, setActivityPlayerId] = useState<string | null>(null);
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -85,6 +109,10 @@ function AdminPage() {
   const profilesById = useMemo(() => {
     return new Map(profiles.map((profile) => [profile.id, profile]));
   }, [profiles]);
+
+  const rankingByPlayerId = useMemo(() => {
+    return new Map(rankings.map((ranking) => [ranking.player_id, ranking]));
+  }, [rankings]);
 
   const rankedPlayerIds = useMemo(() => {
     return new Set(rankings.map((ranking) => ranking.player_id));
@@ -102,31 +130,6 @@ function AdminPage() {
     );
   }, [profiles, rankedPlayerIds]);
 
-  const approvedProfiles = useMemo(() => {
-    return profiles.filter((profile) => profile.status === 'approved');
-  }, [profiles]);
-
-  const filteredApprovedProfiles = useMemo(() => {
-    const query = playerSearch.trim().toLowerCase();
-
-    if (!query) {
-      return approvedProfiles;
-    }
-
-    return approvedProfiles.filter((profile) =>
-      [profile.full_name ?? '', profile.email ?? '', profile.role ?? '', profile.status ?? '', profile.id]
-        .join(' ')
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [approvedProfiles, playerSearch]);
-
-  const activeChallengeMatches = useMemo(() => {
-    return matches.filter((match) =>
-      ['pending', 'accepted', 'time_proposed'].includes(match.status),
-    );
-  }, [matches]);
-
   const scheduledMatches = useMemo(() => {
     return matches.filter((match) => match.status === 'scheduled');
   }, [matches]);
@@ -134,6 +137,83 @@ function AdminPage() {
   const completedMatches = useMemo(() => {
     return matches.filter((match) => match.status === 'completed');
   }, [matches]);
+
+  const openMatches = useMemo(() => {
+    return matches.filter(isOpenMatch);
+  }, [matches]);
+
+  const waitingForTimeSelectionMatches = useMemo(() => {
+    return matches.filter(
+      (match) => match.status === 'accepted' || match.status === 'time_proposed',
+    );
+  }, [matches]);
+
+  const scheduledTodayMatches = useMemo(() => {
+    return scheduledMatches.filter((match) => isToday(match.proposed_match_at));
+  }, [scheduledMatches]);
+
+  const completedThisWeekMatches = useMemo(() => {
+    return completedMatches.filter((match) => isThisWeek(getMatchTimelineDate(match)));
+  }, [completedMatches]);
+
+  const activeMatchPlayerIds = useMemo(() => {
+    return new Set(
+      matches
+        .filter((match) => ['pending', 'accepted', 'time_proposed'].includes(match.status))
+        .flatMap((match) => [match.challenger_id, match.opponent_id]),
+    );
+  }, [matches]);
+
+  const scheduledMatchPlayerIds = useMemo(() => {
+    return new Set(
+      scheduledMatches.flatMap((match) => [match.challenger_id, match.opponent_id]),
+    );
+  }, [scheduledMatches]);
+
+  const playerRows = useMemo<PlayerAdminRow[]>(() => {
+    return profiles
+      .map((profile) => {
+        const ranking = rankingByPlayerId.get(profile.id);
+        const statusKey = getPlayerStatusKey({
+          hasActiveMatch: activeMatchPlayerIds.has(profile.id),
+          hasScheduledMatch: scheduledMatchPlayerIds.has(profile.id),
+          isRanked: Boolean(ranking),
+          profile,
+        });
+
+        return {
+          profile,
+          ranking,
+          status: getPlayerStatusInfo(statusKey),
+          statusKey,
+        };
+      })
+      .sort(comparePlayerRows);
+  }, [activeMatchPlayerIds, profiles, rankingByPlayerId, scheduledMatchPlayerIds]);
+
+  const filteredPlayerRows = useMemo(() => {
+    const query = playerSearch.trim().toLowerCase();
+
+    if (!query) {
+      return playerRows;
+    }
+
+    return playerRows.filter(({ profile, ranking, status }) =>
+      [
+        profile.full_name ?? '',
+        profile.email ?? '',
+        profile.role ?? '',
+        profile.status ?? '',
+        profile.id,
+        status.label,
+        ranking ? `rank ${ranking.rank_position}` : 'unassigned',
+        ranking ? `${ranking.wins}-${ranking.losses}` : '0-0',
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [playerRows, playerSearch]);
 
   const filteredRankings = useMemo(() => {
     const query = playerSearch.trim().toLowerCase();
@@ -174,36 +254,69 @@ function AdminPage() {
     );
   }, [playerSearch, unrankedProfiles]);
 
-  const filteredMatches = useMemo(() => {
-    if (matchFilter === 'all') {
+  const matchesForActivityPlayer = useMemo(() => {
+    if (!activityPlayerId) {
       return matches;
     }
 
-    return matches.filter((match) => match.status === matchFilter);
-  }, [matchFilter, matches]);
-
-  const matchStatusCounts = useMemo(() => {
-    return matches.reduce<Record<MatchStatus, number>>(
-      (counts, match) => ({
-        ...counts,
-        [match.status]: counts[match.status] + 1,
-      }),
-      {
-        pending: 0,
-        accepted: 0,
-        time_proposed: 0,
-        declined: 0,
-        scheduled: 0,
-        completed: 0,
-        canceled: 0,
-        expired: 0,
-      },
+    return matches.filter(
+      (match) =>
+        match.challenger_id === activityPlayerId || match.opponent_id === activityPlayerId,
     );
-  }, [matches]);
+  }, [activityPlayerId, matches]);
+
+  const filteredMatches = useMemo(() => {
+    if (matchFilter === 'all') {
+      return matchesForActivityPlayer;
+    }
+
+    if (matchFilter === 'needs_action') {
+      return matchesForActivityPlayer
+        .filter(isMatchNeedsAdminAttention)
+        .sort(compareNeedsActionMatches);
+    }
+
+    if (matchFilter === 'problems') {
+      return matchesForActivityPlayer.filter(isProblemMatch);
+    }
+
+    return matchesForActivityPlayer.filter((match) => match.status === matchFilter);
+  }, [matchFilter, matchesForActivityPlayer]);
 
   const visibleAdminMatches = useMemo(() => {
     return filteredMatches;
   }, [filteredMatches]);
+
+  const activityPlayer = activityPlayerId ? profilesById.get(activityPlayerId) : undefined;
+
+  const matchFilterOptions = useMemo<Array<{ id: MatchFilter; label: string; count: number }>>(
+    () => [
+      { id: 'all', label: 'All', count: matchesForActivityPlayer.length },
+      {
+        id: 'needs_action',
+        label: 'Needs Action',
+        count:
+          matchesForActivityPlayer.filter(isMatchNeedsAdminAttention).length +
+          (activityPlayerId ? 0 : pendingProfiles.length),
+      },
+      {
+        id: 'scheduled',
+        label: 'Scheduled',
+        count: matchesForActivityPlayer.filter((match) => match.status === 'scheduled').length,
+      },
+      {
+        id: 'completed',
+        label: 'Completed',
+        count: matchesForActivityPlayer.filter((match) => match.status === 'completed').length,
+      },
+      {
+        id: 'problems',
+        label: 'Problems',
+        count: matchesForActivityPlayer.filter(isProblemMatch).length,
+      },
+    ],
+    [activityPlayerId, matchesForActivityPlayer, pendingProfiles.length],
+  );
 
   async function loadAdminData() {
     setIsLoading(true);
@@ -221,7 +334,7 @@ function AdminPage() {
         .order('rank_position', { ascending: true }),
       supabase
         .from('matches')
-        .select('id, challenger_id, opponent_id, status, proposed_match_at, scheduled_match_ends_at, cancel_reason, canceled_at, winner_id, created_at')
+        .select('id, challenger_id, opponent_id, status, proposed_match_at, proposed_by_player_id, scheduled_match_ends_at, cancel_reason, canceled_at, winner_id, created_at')
         .order('created_at', { ascending: false }),
     ]);
 
@@ -439,11 +552,36 @@ function AdminPage() {
 
     if (error) {
       setErrorMessage(error.message);
-      return;
+      return false;
     }
 
     setMessage('Player name updated.');
     await loadAdminData();
+    return true;
+  }
+
+  async function togglePlayerEdit(profileId: string) {
+    if (editingPlayerId !== profileId) {
+      setEditingPlayerId(profileId);
+      return;
+    }
+
+    const wasSaved = await saveProfileName(profileId);
+
+    if (wasSaved) {
+      setEditingPlayerId(null);
+    }
+  }
+
+  function viewPlayerActivity(profileId: string) {
+    setActivityPlayerId(profileId);
+    setMatchFilter('all');
+    setActiveTab('matches');
+  }
+
+  function openPlayerRankEditor(profile: Profile) {
+    setPlayerSearch(getProfileName(profile));
+    setActiveTab('ladder');
   }
 
   async function updateProfileRole(profileId: string, role: ProfileRole) {
@@ -634,11 +772,32 @@ function AdminPage() {
           </div>
         ) : (
           <>
-            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <AdminStatCard label="Pending Players" value={pendingProfiles.length} />
-              <AdminStatCard label="Approved Players" value={approvedProfiles.length} />
-              <AdminStatCard label="Active Matches" value={activeChallengeMatches.length} />
-              <AdminStatCard label="Scheduled Matches" value={scheduledMatches.length} />
+            <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              <AdminStatCard
+                label="Pending Players"
+                tone="yellow"
+                value={pendingProfiles.length}
+              />
+              <AdminStatCard
+                label="Active Matches"
+                tone="blue"
+                value={openMatches.length}
+              />
+              <AdminStatCard
+                label="Scheduled Today"
+                tone="purple"
+                value={scheduledTodayMatches.length}
+              />
+              <AdminStatCard
+                label="Waiting For Time Selection"
+                tone="gray"
+                value={waitingForTimeSelectionMatches.length}
+              />
+              <AdminStatCard
+                label="Completed This Week"
+                tone="green"
+                value={completedThisWeekMatches.length}
+              />
             </section>
 
             <nav className="grid gap-2 rounded-3xl border border-line-200 bg-white p-2 shadow-sm sm:grid-cols-5">
@@ -684,9 +843,12 @@ function AdminPage() {
                           key={profile.id}
                         >
                           <div className="min-w-0">
-                            <p className="truncate text-base font-black text-ink-900">
-                              {getProfileName(profile)}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-base font-black text-ink-900">
+                                {getProfileName(profile)}
+                              </p>
+                              <StatusBadge label="Pending Approval" tone="yellow" />
+                            </div>
                             <p className="mt-1 truncate text-sm font-semibold text-ink-700">
                               {profile.email ?? 'Email not stored'}
                             </p>
@@ -738,83 +900,106 @@ function AdminPage() {
                   />
                 </div>
                 <div className="mt-5 grid gap-3">
-                  {filteredApprovedProfiles.length === 0 ? (
-                    <AdminEmptyState message="No approved players match this search." />
+                  {filteredPlayerRows.length === 0 ? (
+                    <AdminEmptyState message="No players match this search." />
                   ) : (
-                    filteredApprovedProfiles.map((profile) => {
-                      const isRanked = rankedPlayerIds.has(profile.id);
+                    filteredPlayerRows.map(({ profile, ranking, status }) => {
+                      const isRanked = Boolean(ranking);
                       const saveKey = `profile-${profile.id}`;
+                      const isEditing = editingPlayerId === profile.id;
 
                       return (
                         <article
-                          className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm xl:grid-cols-[minmax(0,1fr)_minmax(12rem,1fr)_8rem_8rem_auto] xl:items-end"
+                          className="rounded-2xl border border-line-200 bg-white px-4 py-3 shadow-sm"
                           key={profile.id}
                         >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-black text-ink-900">
-                              {getProfileName(profile)}
-                            </p>
-                            <p className="mt-1 truncate text-xs font-semibold text-ink-600">
-                              {profile.email ?? 'Email not stored'}
-                            </p>
-                            <p className="mt-2">
-                              <StatusPill label={isRanked ? 'On ladder' : 'Not ranked'} />
-                            </p>
-                          </div>
-                          <label className="block">
-                            <span className="admin-label">Full Name</span>
-                            <input
-                              className="admin-input mt-1"
-                              value={profileNameDrafts[profile.id] ?? ''}
-                              onChange={(event) =>
-                                updateProfileNameDraft(profile.id, event.target.value)
-                              }
-                            />
-                          </label>
-                          <ReadOnlyField label="Status" value={profile.status ?? 'unknown'} />
-                          <label className="block">
-                            <span className="admin-label">Role</span>
-                            <select
-                              className="admin-input mt-1"
-                              value={profile.role ?? 'player'}
-                              onChange={(event) =>
-                                updateProfileRole(profile.id, event.target.value as ProfileRole)
-                              }
-                              disabled={actionId === profile.id}
-                            >
-                              <option value="player">Player</option>
-                              <option value="admin">Admin</option>
-                            </select>
-                          </label>
-                          <div className="flex flex-wrap gap-2 xl:justify-end">
-                            <button
-                              className="admin-primary-button"
-                              type="button"
-                              onClick={() => saveProfileName(profile.id)}
-                              disabled={actionId === saveKey}
-                            >
-                              {actionId === saveKey ? 'Saving...' : 'Save'}
-                            </button>
-                            {isRanked ? (
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="min-w-0 xl:flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="truncate text-sm font-black text-ink-900 sm:text-base">
+                                  {getProfileName(profile)}
+                                </p>
+                                <StatusBadge label={status.label} tone={status.tone} />
+                              </div>
+                              <p className="mt-1 truncate text-xs font-semibold text-ink-600">
+                                {profile.email ?? 'Email not stored'}
+                              </p>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-3 xl:w-[26rem]">
+                              <CompactMetric
+                                label="Rank"
+                                value={ranking ? `#${ranking.rank_position}` : 'Unassigned'}
+                              />
+                              <CompactMetric
+                                label="Record"
+                                value={ranking ? `${ranking.wins}-${ranking.losses}` : '0-0'}
+                              />
+                              <CompactMetric label="Role" value={profile.role ?? 'player'} />
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 xl:justify-end">
+                              <button
+                                className={isEditing ? 'admin-primary-button' : 'admin-secondary-button'}
+                                type="button"
+                                onClick={() => togglePlayerEdit(profile.id)}
+                                disabled={actionId === saveKey}
+                              >
+                                {actionId === saveKey ? 'Saving...' : isEditing ? 'Save' : 'Edit'}
+                              </button>
+                              <button
+                                className="admin-secondary-button"
+                                type="button"
+                                onClick={() => viewPlayerActivity(profile.id)}
+                              >
+                                View Activity
+                              </button>
                               <button
                                 className="admin-danger-button"
                                 type="button"
                                 onClick={() => removePlayerFromLadder(profile.id)}
-                                disabled={actionId === profile.id}
+                                disabled={!isRanked || actionId === profile.id}
                               >
                                 Remove
                               </button>
-                            ) : (
                               <button
                                 className="admin-secondary-button"
                                 type="button"
-                                onClick={() => addPlayerToLadder(profile.id)}
-                                disabled={actionId === profile.id}
+                                onClick={() => openPlayerRankEditor(profile)}
+                                disabled={!isRanked}
                               >
-                                Add to Bottom
+                                Change Rank
                               </button>
-                            )}
+                            </div>
                           </div>
+                          {isEditing && (
+                            <div className="mt-3 grid gap-3 border-t border-line-200 pt-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
+                              <label className="block">
+                                <span className="admin-label">Full Name</span>
+                                <input
+                                  className="admin-input mt-1"
+                                  value={profileNameDrafts[profile.id] ?? ''}
+                                  onChange={(event) =>
+                                    updateProfileNameDraft(profile.id, event.target.value)
+                                  }
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="admin-label">Role</span>
+                                <select
+                                  className="admin-input mt-1"
+                                  value={profile.role ?? 'player'}
+                                  onChange={(event) =>
+                                    updateProfileRole(profile.id, event.target.value as ProfileRole)
+                                  }
+                                  disabled={actionId === profile.id}
+                                >
+                                  <option value="player">Player</option>
+                                  <option value="admin">Admin</option>
+                                </select>
+                              </label>
+                            </div>
+                          )}
                         </article>
                       );
                     })
@@ -850,6 +1035,15 @@ function AdminPage() {
                       filteredRankings.map((ranking) => {
                         const profile = profilesById.get(ranking.player_id);
                         const rowActionId = `player-row-${ranking.player_id}`;
+                        const statusKey = profile
+                          ? getPlayerStatusKey({
+                              hasActiveMatch: activeMatchPlayerIds.has(profile.id),
+                              hasScheduledMatch: scheduledMatchPlayerIds.has(profile.id),
+                              isRanked: true,
+                              profile,
+                            })
+                          : 'inactive';
+                        const status = getPlayerStatusInfo(statusKey);
                         const draft = rankingDrafts[ranking.id] ?? {
                           rank_position: ranking.rank_position,
                           wins: ranking.wins,
@@ -886,6 +1080,9 @@ function AdminPage() {
                               <p className="mt-1 truncate text-xs font-semibold text-ink-600">
                                 {profile?.email ?? 'Email not stored'}
                               </p>
+                              <div className="mt-2">
+                                <StatusBadge label={status.label} tone={status.tone} />
+                              </div>
                             </div>
                             <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
                               <NumberInput
@@ -940,6 +1137,9 @@ function AdminPage() {
                           <div>
                             <p className="text-sm font-bold text-ink-900">{getProfileName(profile)}</p>
                             <p className="text-xs text-ink-600">{profile.email ?? 'Email not stored'}</p>
+                            <div className="mt-2">
+                              <StatusBadge label="Inactive" tone="gray" />
+                            </div>
                           </div>
                           <button
                             className="admin-secondary-button"
@@ -962,93 +1162,142 @@ function AdminPage() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <SectionHeader
                     title="Matches"
-                    description="Review match status, scheduled times, and cancellations."
+                    description="Scan who is waiting, what is scheduled, and what needs admin attention."
                   />
                   <div className="flex flex-wrap gap-2">
-                    {([
-                      ['all', 'All'],
-                      ['pending', 'Pending'],
-                      ['accepted', 'Accepted'],
-                      ['time_proposed', 'Time Proposed'],
-                      ['scheduled', 'Scheduled'],
-                      ['completed', 'Completed'],
-                      ['canceled', 'Canceled'],
-                    ] as const).map(([filter, label]) => (
+                    {matchFilterOptions.map(({ count, id, label }) => (
                       <button
-                        className={`rounded-full px-3 py-2 text-xs font-black transition ${
-                          matchFilter === filter
+                        className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black transition ${
+                          matchFilter === id
                             ? 'bg-court-900 text-white'
                             : 'border border-line-200 bg-white text-ink-700 hover:bg-slate-100'
                         }`}
-                        key={filter}
+                        key={id}
                         type="button"
-                        onClick={() => setMatchFilter(filter)}
+                        onClick={() => setMatchFilter(id)}
                       >
                         {label}
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[0.68rem] ${
+                            matchFilter === id ? 'bg-white/20 text-white' : 'bg-slate-100 text-ink-700'
+                          }`}
+                        >
+                          {count}
+                        </span>
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  <AdminStatusCard label="Active" value={activeChallengeMatches.length} />
-                  <AdminStatusCard label="Scheduled" value={scheduledMatches.length} />
-                  <AdminStatusCard label="Completed" value={completedMatches.length} />
-                </div>
+
+                {activityPlayer && (
+                  <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-bold text-court-900">
+                      Showing match activity for {getProfileName(activityPlayer)}
+                    </p>
+                    <button
+                      className="admin-secondary-button bg-white"
+                      type="button"
+                      onClick={() => setActivityPlayerId(null)}
+                    >
+                      Show All Matches
+                    </button>
+                  </div>
+                )}
+
+                {matchFilter === 'needs_action' && pendingProfiles.length > 0 && !activityPlayer && (
+                  <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusBadge label="Pending Approval" tone="yellow" />
+                          <p className="text-sm font-black text-amber-950">
+                            {pendingProfiles.length} player
+                            {pendingProfiles.length === 1 ? '' : 's'} waiting for approval
+                          </p>
+                        </div>
+                        <p className="mt-1 text-sm font-semibold text-amber-900">
+                          Review these before match follow-ups.
+                        </p>
+                      </div>
+                      <button
+                        className="admin-primary-button"
+                        type="button"
+                        onClick={() => setActiveTab('pending')}
+                      >
+                        Review Pending
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-5 grid gap-3">
                   {visibleAdminMatches.length === 0 ? (
                     <AdminEmptyState message="No matches match this filter." />
                   ) : (
-                    visibleAdminMatches.map((match) => (
-                      <article
-                        className="grid gap-4 rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_11rem_auto] lg:items-center"
-                        key={match.id}
-                      >
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate text-sm font-black text-ink-900">
-                              {getProfileName(profilesById.get(match.challenger_id))} vs{' '}
-                              {getProfileName(profilesById.get(match.opponent_id))}
-                            </p>
-                            <StatusPill label={getMatchStatusLabel(match.status)} />
+                    visibleAdminMatches.map((match) => {
+                      const status = getMatchStatusInfo(match.status);
+                      const details = getMatchDetailItems(match, profilesById);
+
+                      return (
+                        <article
+                          className="rounded-2xl border border-line-200 bg-white px-4 py-4 shadow-sm"
+                          key={match.id}
+                        >
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="truncate text-sm font-black text-ink-900 sm:text-base">
+                                  {getProfileName(profilesById.get(match.challenger_id))} vs{' '}
+                                  {getProfileName(profilesById.get(match.opponent_id))}
+                                </p>
+                                <StatusBadge label={status.label} tone={status.tone} />
+                              </div>
+                              <p className="mt-1 text-sm font-semibold text-ink-700">
+                                {getMatchActionText(match, profilesById)}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2 lg:justify-end">
+                              <select
+                                className="admin-input w-full sm:w-48"
+                                value={match.status}
+                                onChange={(event) =>
+                                  updateMatchStatus(match.id, event.target.value as MatchStatus)
+                                }
+                                disabled={actionId === match.id}
+                              >
+                                <option value="pending">Pending</option>
+                                <option value="accepted">Accepted</option>
+                                <option value="time_proposed">Time Proposed</option>
+                                <option value="declined">Declined</option>
+                                <option value="scheduled">Scheduled</option>
+                                <option value="completed" disabled>
+                                  Completed (winner required)
+                                </option>
+                                <option value="canceled">Canceled</option>
+                                <option value="expired">Expired</option>
+                              </select>
+                              <button
+                                className="admin-danger-button"
+                                type="button"
+                                onClick={() => cancelMatch(match.id)}
+                                disabled={actionId === match.id || match.status === 'canceled'}
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           </div>
-                          <p className="mt-1 text-sm font-semibold text-ink-700">
-                            {formatMatchWindow(match)}
-                          </p>
-                          {match.winner_id && (
-                            <p className="mt-1 text-xs font-bold text-ink-600">
-                              Winner: {getProfileName(profilesById.get(match.winner_id))}
-                            </p>
-                          )}
-                        </div>
-                        <select
-                          className="admin-input"
-                          value={match.status}
-                          onChange={(event) =>
-                            updateMatchStatus(match.id, event.target.value as MatchStatus)
-                          }
-                          disabled={actionId === match.id}
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="accepted">Accepted</option>
-                          <option value="time_proposed">Time Proposed</option>
-                          <option value="declined">Declined</option>
-                          <option value="scheduled">Scheduled</option>
-                          <option value="completed" disabled>
-                            Completed (winner required)
-                          </option>
-                          <option value="canceled">Canceled</option>
-                          <option value="expired">Expired</option>
-                        </select>
-                        <button
-                          className="admin-danger-button"
-                          type="button"
-                          onClick={() => cancelMatch(match.id)}
-                          disabled={actionId === match.id || match.status === 'canceled'}
-                        >
-                          Cancel
-                        </button>
-                      </article>
-                    ))
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                            {details.map((detail) => (
+                              <CompactMetric
+                                key={detail.label}
+                                label={detail.label}
+                                value={detail.value}
+                              />
+                            ))}
+                          </div>
+                        </article>
+                      );
+                    })
                   )}
                 </div>
               </section>
@@ -1133,57 +1382,91 @@ function AdminEmptyState({ message }: { message: string }) {
   );
 }
 
-function ReadOnlyField({ label, value }: { label: string; value: string }) {
+function CompactMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <p className="admin-label">{label}</p>
-      <p className="mt-1 rounded-xl border border-line-200 bg-slate-50 px-3 py-2 text-sm font-bold capitalize text-ink-800">
-        {value}
+    <div className="min-w-0 rounded-xl border border-line-200 bg-slate-50 px-3 py-2">
+      <p className="text-[0.68rem] font-black uppercase tracking-[0.1em] text-ink-600">
+        {label}
       </p>
+      <p className="mt-0.5 truncate text-sm font-black text-ink-900">{value}</p>
     </div>
   );
 }
 
-function StatusPill({ label }: { label: string }) {
+const statusToneClasses: Record<StatusTone, { badge: string; dot: string }> = {
+  blue: {
+    badge: 'border-blue-200 bg-blue-50 text-blue-800',
+    dot: 'bg-blue-500',
+  },
+  gray: {
+    badge: 'border-slate-200 bg-slate-100 text-slate-700',
+    dot: 'bg-slate-400',
+  },
+  green: {
+    badge: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    dot: 'bg-emerald-500',
+  },
+  purple: {
+    badge: 'border-violet-200 bg-violet-50 text-violet-800',
+    dot: 'bg-violet-500',
+  },
+  red: {
+    badge: 'border-red-200 bg-red-50 text-red-700',
+    dot: 'bg-red-500',
+  },
+  yellow: {
+    badge: 'border-amber-200 bg-amber-50 text-amber-800',
+    dot: 'bg-amber-400',
+  },
+};
+
+function StatusBadge({ label, tone }: StatusInfo) {
+  const classes = statusToneClasses[tone];
+
   return (
-    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-ink-700">
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-black ${classes.badge}`}
+    >
+      <span className={`size-2 rounded-full ${classes.dot}`} />
       {label}
     </span>
   );
 }
 
-function AdminStatCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-[1.5rem] border border-line-200 bg-white p-5 shadow-sm">
-      <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
-        {label}
-      </p>
-      <p className="mt-2 text-3xl font-black text-ink-900">{value}</p>
-    </div>
-  );
-}
+function AdminStatCard({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: StatusTone;
+  value: number;
+}) {
+  const classes = statusToneClasses[tone];
 
-function AdminStatusCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-2xl border border-line-200 bg-slate-50 px-4 py-3">
-      <p className="text-xs font-black uppercase tracking-[0.12em] text-ink-700">
-        {label}
-      </p>
+    <div className="rounded-2xl border border-line-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[0.68rem] font-black uppercase tracking-[0.12em] text-ink-600">
+          {label}
+        </p>
+        <span className={`mt-0.5 size-2.5 rounded-full ${classes.dot}`} />
+      </div>
       <p className="mt-1 text-2xl font-black text-ink-900">{value}</p>
     </div>
   );
 }
 
-function getMatchStatusLabel(status: MatchStatus) {
-  const labels: Record<MatchStatus, string> = {
-    pending: 'Pending',
-    accepted: 'Accepted',
-    time_proposed: 'Time Proposed',
-    declined: 'Declined',
-    scheduled: 'Scheduled',
-    completed: 'Completed',
-    canceled: 'Canceled',
-    expired: 'Expired',
+function getMatchStatusInfo(status: MatchStatus): StatusInfo {
+  const labels: Record<MatchStatus, StatusInfo> = {
+    accepted: { label: 'Time proposal needed', tone: 'blue' },
+    canceled: { label: 'Canceled', tone: 'red' },
+    completed: { label: 'Completed', tone: 'green' },
+    declined: { label: 'Canceled', tone: 'red' },
+    expired: { label: 'Canceled', tone: 'red' },
+    pending: { label: 'Waiting for response', tone: 'yellow' },
+    scheduled: { label: 'Scheduled', tone: 'purple' },
+    time_proposed: { label: 'Time proposal needed', tone: 'blue' },
   };
 
   return labels[status];
@@ -1283,34 +1566,260 @@ function getProfileName(profile: Profile | undefined) {
   return profile?.full_name || 'Unnamed player';
 }
 
-function formatDisplayDate(value: string | null) {
+function getPlayerStatusKey({
+  hasActiveMatch,
+  hasScheduledMatch,
+  isRanked,
+  profile,
+}: {
+  hasActiveMatch: boolean;
+  hasScheduledMatch: boolean;
+  isRanked: boolean;
+  profile: Profile;
+}): PlayerStatusKey {
+  if (profile.status === 'pending') {
+    return 'pending_approval';
+  }
+
+  if (profile.status !== 'approved' || !isRanked) {
+    return 'inactive';
+  }
+
+  if (hasScheduledMatch) {
+    return 'scheduled_match';
+  }
+
+  if (hasActiveMatch) {
+    return 'active_match';
+  }
+
+  return 'available';
+}
+
+function getPlayerStatusInfo(status: PlayerStatusKey): StatusInfo {
+  const statuses: Record<PlayerStatusKey, StatusInfo> = {
+    active_match: { label: 'Active Match', tone: 'blue' },
+    available: { label: 'Available', tone: 'green' },
+    inactive: { label: 'Inactive', tone: 'gray' },
+    pending_approval: { label: 'Pending Approval', tone: 'yellow' },
+    scheduled_match: { label: 'Scheduled Match', tone: 'purple' },
+  };
+
+  return statuses[status];
+}
+
+function comparePlayerRows(first: PlayerAdminRow, second: PlayerAdminRow) {
+  const statusPriority: Record<PlayerStatusKey, number> = {
+    pending_approval: 0,
+    active_match: 1,
+    scheduled_match: 2,
+    available: 3,
+    inactive: 4,
+  };
+  const priorityDifference =
+    statusPriority[first.statusKey] - statusPriority[second.statusKey];
+
+  if (priorityDifference !== 0) {
+    return priorityDifference;
+  }
+
+  if (first.ranking && second.ranking) {
+    return first.ranking.rank_position - second.ranking.rank_position;
+  }
+
+  if (first.ranking) {
+    return -1;
+  }
+
+  if (second.ranking) {
+    return 1;
+  }
+
+  return getProfileName(first.profile).localeCompare(getProfileName(second.profile));
+}
+
+function isOpenMatch(match: Match) {
+  return ['pending', 'accepted', 'time_proposed', 'scheduled'].includes(match.status);
+}
+
+function isMatchNeedsAdminAttention(match: Match) {
+  return ['pending', 'accepted', 'time_proposed'].includes(match.status);
+}
+
+function isProblemMatch(match: Match) {
+  return ['canceled', 'declined', 'expired'].includes(match.status);
+}
+
+function compareNeedsActionMatches(first: Match, second: Match) {
+  const priority: Record<MatchStatus, number> = {
+    accepted: 1,
+    canceled: 5,
+    completed: 5,
+    declined: 5,
+    expired: 5,
+    pending: 0,
+    scheduled: 5,
+    time_proposed: 2,
+  };
+  const priorityDifference = priority[first.status] - priority[second.status];
+
+  if (priorityDifference !== 0) {
+    return priorityDifference;
+  }
+
+  return new Date(second.created_at).getTime() - new Date(first.created_at).getTime();
+}
+
+function getMatchActionText(match: Match, profilesById: Map<string, Profile>) {
+  if (match.status === 'pending') {
+    return `Waiting for ${getProfileName(profilesById.get(match.opponent_id))} to accept`;
+  }
+
+  if (match.status === 'accepted') {
+    return 'Waiting for time selection';
+  }
+
+  if (match.status === 'time_proposed') {
+    const nextPlayerId =
+      match.proposed_by_player_id === match.challenger_id
+        ? match.opponent_id
+        : match.challenger_id;
+
+    if (match.proposed_by_player_id) {
+      return `Waiting for ${getProfileName(profilesById.get(nextPlayerId))} to choose a time`;
+    }
+
+    return 'Waiting for time selection';
+  }
+
+  if (match.status === 'scheduled') {
+    return `Scheduled: ${formatCompactDateTime(match.proposed_match_at)}`;
+  }
+
+  if (match.status === 'completed') {
+    return `Completed: Winner ${getProfileName(profilesById.get(match.winner_id ?? ''))}`;
+  }
+
+  if (match.status === 'declined') {
+    return 'Challenge declined';
+  }
+
+  if (match.status === 'expired') {
+    return 'Expired without scheduling';
+  }
+
+  return match.cancel_reason ? `Canceled: ${match.cancel_reason}` : 'Canceled';
+}
+
+function getMatchDetailItems(match: Match, profilesById: Map<string, Profile>) {
+  const details = [{ label: 'Next', value: getMatchActionText(match, profilesById) }];
+
+  if (match.proposed_match_at && match.status !== 'scheduled') {
+    details.push({
+      label: match.status === 'completed' ? 'Played' : 'Proposed',
+      value: formatCompactDateTime(match.proposed_match_at),
+    });
+  }
+
+  if (match.status === 'scheduled') {
+    details.push({
+      label: 'Scheduled Time',
+      value: formatMatchTimeRange(match),
+    });
+  }
+
+  if (match.status === 'completed' && match.winner_id) {
+    details.push({
+      label: 'Winner',
+      value: getProfileName(profilesById.get(match.winner_id)),
+    });
+  }
+
+  if (match.cancel_reason && isProblemMatch(match)) {
+    details.push({ label: 'Reason', value: match.cancel_reason });
+  }
+
+  details.push({
+    label: 'Created',
+    value: formatCompactDateTime(match.created_at),
+  });
+
+  return details;
+}
+
+function getMatchTimelineDate(match: Match) {
+  return match.proposed_match_at ?? match.created_at;
+}
+
+function isToday(value: string | null) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+  const today = new Date();
+
+  return (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  );
+}
+
+function isThisWeek(value: string | null) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - start.getDay());
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+
+  return date >= start && date < end;
+}
+
+function formatCompactDateTime(value: string | null) {
   if (!value) {
     return 'No time selected';
   }
 
   return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: 'short',
+    weekday: 'short',
   }).format(new Date(value));
 }
 
-function formatMatchWindow(match: Match) {
+function formatMatchTimeRange(match: Match) {
   if (!match.proposed_match_at) {
     return 'No time selected';
   }
 
-  const start = new Date(match.proposed_match_at);
-
   if (!match.scheduled_match_ends_at) {
-    return formatDisplayDate(match.proposed_match_at);
+    return formatCompactDateTime(match.proposed_match_at);
   }
 
+  const start = new Date(match.proposed_match_at);
   const end = new Date(match.scheduled_match_ends_at);
-  const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(start);
-  const startTime = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(start);
-  const endTime = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(end);
+  const startLabel = new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: 'short',
+    weekday: 'short',
+  }).format(start);
+  const endLabel = new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(end);
 
-  return `${date}, ${startTime} - ${endTime}`;
+  return `${startLabel} - ${endLabel}`;
 }
 
 export default AdminPage;
