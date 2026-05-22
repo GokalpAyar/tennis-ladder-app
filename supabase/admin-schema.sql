@@ -19,7 +19,7 @@ drop constraint if exists profiles_status_check;
 
 alter table public.profiles
 add constraint profiles_status_check
-check (status in ('pending', 'approved', 'rejected'));
+check (status in ('pending', 'approved', 'rejected', 'inactive'));
 
 update public.profiles
 set status = 'approved'
@@ -496,8 +496,81 @@ begin
 end;
 $$;
 
+create or replace function public.admin_deactivate_player(
+  target_profile_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin(auth.uid()) then
+    raise exception 'Admin access required.';
+  end if;
+
+  if target_profile_id is null then
+    raise exception 'Player profile is required.';
+  end if;
+
+  delete from public.ladder_rankings
+  where player_id = target_profile_id;
+
+  update public.profiles
+  set status = 'inactive'
+  where id = target_profile_id;
+
+  if not found then
+    raise exception 'Player profile was not found.';
+  end if;
+end;
+$$;
+
+create or replace function public.admin_delete_player_profile(
+  target_profile_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin(auth.uid()) then
+    raise exception 'Admin access required.';
+  end if;
+
+  if target_profile_id is null then
+    raise exception 'Player profile is required.';
+  end if;
+
+  if exists (
+    select 1
+    from public.matches
+    where challenger_id = target_profile_id
+       or opponent_id = target_profile_id
+       or winner_id = target_profile_id
+       or canceled_by = target_profile_id
+       or proposed_by_player_id = target_profile_id
+  ) then
+    raise exception 'This player has match history. Remove from ladder instead, or archive their profile.';
+  end if;
+
+  delete from public.ladder_rankings
+  where player_id = target_profile_id;
+
+  delete from public.profiles
+  where id = target_profile_id;
+
+  if not found then
+    raise exception 'Player profile was not found.';
+  end if;
+end;
+$$;
+
 grant execute on function public.admin_approve_player_with_rank(uuid, integer) to authenticated;
 grant execute on function public.admin_update_player_ladder_row(uuid, text, integer, integer, integer) to authenticated;
+grant execute on function public.admin_deactivate_player(uuid) to authenticated;
+grant execute on function public.admin_delete_player_profile(uuid) to authenticated;
 
 create or replace function public.handle_new_user_profile()
 returns trigger
@@ -540,6 +613,7 @@ drop policy if exists "Authenticated users can read profiles" on public.profiles
 drop policy if exists "Users can create their own profile" on public.profiles;
 drop policy if exists "Users can update their profile" on public.profiles;
 drop policy if exists "Admins can update profiles" on public.profiles;
+drop policy if exists "Admins can delete profiles" on public.profiles;
 
 create policy "Authenticated users can read profiles"
 on public.profiles
@@ -563,6 +637,12 @@ for update
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+create policy "Admins can delete profiles"
+on public.profiles
+for delete
+to authenticated
+using (public.is_admin());
 
 drop policy if exists "Authenticated users can read ladder rankings" on public.ladder_rankings;
 drop policy if exists "Users can join ladder" on public.ladder_rankings;

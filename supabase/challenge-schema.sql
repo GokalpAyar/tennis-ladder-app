@@ -23,7 +23,7 @@ drop constraint if exists profiles_status_check;
 
 alter table public.profiles
 add constraint profiles_status_check
-check (status in ('pending', 'approved', 'rejected'));
+check (status in ('pending', 'approved', 'rejected', 'inactive'));
 
 alter table public.profiles
 drop constraint if exists profiles_role_check;
@@ -443,6 +443,7 @@ drop policy if exists "Authenticated users can read profiles" on public.profiles
 drop policy if exists "Users can create their own profile" on public.profiles;
 drop policy if exists "Users can update their profile" on public.profiles;
 drop policy if exists "Admins can update profiles" on public.profiles;
+drop policy if exists "Admins can delete profiles" on public.profiles;
 drop policy if exists "Authenticated users can read ladder rankings" on public.ladder_rankings;
 drop policy if exists "Users can join ladder" on public.ladder_rankings;
 drop policy if exists "Admins can insert ladder rankings" on public.ladder_rankings;
@@ -476,6 +477,12 @@ for update
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+create policy "Admins can delete profiles"
+on public.profiles
+for delete
+to authenticated
+using (public.is_admin());
 
 create policy "Authenticated users can read ladder rankings"
 on public.ladder_rankings

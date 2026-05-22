@@ -9,7 +9,7 @@ type Profile = {
   full_name: string | null;
   email?: string | null;
   role: ProfileRole | null;
-  status: 'pending' | 'approved' | 'rejected' | null;
+  status: 'pending' | 'approved' | 'rejected' | 'inactive' | null;
 };
 
 type LadderRanking = {
@@ -79,6 +79,10 @@ type PlayerAdminRow = {
   statusKey: PlayerStatusKey;
 };
 
+type ProfileConfirmAction =
+  | { type: 'deactivate'; profile: Profile }
+  | { type: 'delete'; profile: Profile };
+
 function AdminPage() {
   const navigate = useNavigate();
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -94,6 +98,8 @@ function AdminPage() {
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('needs_action');
   const [activityPlayerId, setActivityPlayerId] = useState<string | null>(null);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [profileConfirmAction, setProfileConfirmAction] =
+    useState<ProfileConfirmAction | null>(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -502,6 +508,89 @@ function AdminPage() {
     await loadAdminData();
   }
 
+  function requestDeactivatePlayer(profile: Profile) {
+    setProfileConfirmAction({ type: 'deactivate', profile });
+  }
+
+  function requestDeleteProfile(profile: Profile) {
+    setProfileConfirmAction({ type: 'delete', profile });
+  }
+
+  async function confirmProfileManagementAction() {
+    if (!profileConfirmAction) {
+      return;
+    }
+
+    const { profile, type } = profileConfirmAction;
+    const actionKey = `${type}-${profile.id}`;
+
+    setActionId(actionKey);
+    setMessage('');
+    setErrorMessage('');
+
+    if (type === 'deactivate') {
+      const { error } = await supabase.rpc('admin_deactivate_player', {
+        target_profile_id: profile.id,
+      });
+
+      setActionId(null);
+      setProfileConfirmAction(null);
+
+      if (error) {
+        setErrorMessage(error.message);
+        return;
+      }
+
+      setMessage('Player deactivated and removed from the ladder.');
+      await loadAdminData();
+      return;
+    }
+
+    const hasMatchHistory = matches.some(
+      (match) =>
+        match.challenger_id === profile.id ||
+        match.opponent_id === profile.id ||
+        match.winner_id === profile.id ||
+        match.canceled_by === profile.id ||
+        match.proposed_by_player_id === profile.id,
+    );
+
+    if (hasMatchHistory) {
+      setActionId(null);
+      setProfileConfirmAction(null);
+      setErrorMessage(
+        'This player has match history. Remove from ladder instead, or archive their profile.',
+      );
+      return;
+    }
+
+    const { error } = await supabase.rpc('admin_delete_player_profile', {
+      target_profile_id: profile.id,
+    });
+
+    setActionId(null);
+    setProfileConfirmAction(null);
+
+    if (error) {
+      const details = [error.message, error.details, error.hint, error.code]
+        .filter(Boolean)
+        .join('\n');
+
+      if (error.message.includes('match history') || error.code === '23503') {
+        setErrorMessage(
+          'This player has match history. Remove from ladder instead, or archive their profile.',
+        );
+        return;
+      }
+
+      setErrorMessage(details || 'Unable to delete player profile.');
+      return;
+    }
+
+    setMessage('Player profile deleted. Supabase Auth account was not removed.');
+    await loadAdminData();
+  }
+
   async function updatePlayerManagementRow(ranking: LadderRanking) {
     const draft = rankingDrafts[ranking.id];
 
@@ -766,6 +855,15 @@ function AdminPage() {
           </div>
         )}
 
+        {profileConfirmAction && (
+          <ProfileActionModal
+            action={profileConfirmAction}
+            isSaving={actionId === `${profileConfirmAction.type}-${profileConfirmAction.profile.id}`}
+            onCancel={() => setProfileConfirmAction(null)}
+            onConfirm={confirmProfileManagementAction}
+          />
+        )}
+
         {isLoading ? (
           <div className="rounded-3xl border border-line-200 bg-white p-8 text-sm font-semibold text-ink-700 shadow-sm">
             Loading admin data...
@@ -961,6 +1059,25 @@ function AdminPage() {
                                 disabled={!isRanked || actionId === profile.id}
                               >
                                 Remove
+                              </button>
+                              <button
+                                className="admin-secondary-button"
+                                type="button"
+                                onClick={() => requestDeactivatePlayer(profile)}
+                                disabled={
+                                  (profile.status === 'inactive' && !isRanked) ||
+                                  actionId === `deactivate-${profile.id}`
+                                }
+                              >
+                                Deactivate
+                              </button>
+                              <button
+                                className="admin-danger-button"
+                                type="button"
+                                onClick={() => requestDeleteProfile(profile)}
+                                disabled={actionId === `delete-${profile.id}`}
+                              >
+                                Delete Profile
                               </button>
                               <button
                                 className="admin-secondary-button"
@@ -1379,6 +1496,88 @@ function AdminEmptyState({ message }: { message: string }) {
     <p className="rounded-2xl border border-dashed border-line-200 bg-slate-50 px-5 py-8 text-center text-sm font-semibold text-ink-700">
       {message}
     </p>
+  );
+}
+
+function ProfileActionModal({
+  action,
+  isSaving,
+  onCancel,
+  onConfirm,
+}: {
+  action: ProfileConfirmAction;
+  isSaving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isDelete = action.type === 'delete';
+  const title = isDelete ? 'Delete Profile' : 'Deactivate Player';
+  const confirmLabel = isDelete ? 'Delete Profile' : 'Deactivate Player';
+  const body = isDelete
+    ? 'This will remove the player profile and related ladder entry. Are you sure?'
+    : 'This will mark the player inactive and remove their ladder entry. Match history will stay in place.';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 px-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="profile-action-title"
+    >
+      <div className="w-full max-w-lg rounded-3xl border border-line-200 bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-ink-500">
+              Admin action
+            </p>
+            <h3 id="profile-action-title" className="mt-1 text-2xl font-black text-ink-900">
+              {title}
+            </h3>
+          </div>
+          <button
+            className="rounded-full border border-line-200 px-3 py-1.5 text-sm font-black text-ink-600 hover:bg-slate-100"
+            type="button"
+            onClick={onCancel}
+            disabled={isSaving}
+          >
+            Close
+          </button>
+        </div>
+        <div className="mt-4 rounded-2xl border border-line-200 bg-slate-50 p-4">
+          <p className="text-sm font-black text-ink-900">
+            {getProfileName(action.profile)}
+          </p>
+          <p className="mt-1 text-sm font-semibold text-ink-600">
+            {action.profile.email ?? 'Email not stored'}
+          </p>
+        </div>
+        <p className="mt-4 text-sm leading-6 text-ink-700">{body}</p>
+        {isDelete && (
+          <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+            Prefer Deactivate Player when the member has match history. Permanent delete does
+            not remove their Supabase Auth account.
+          </p>
+        )}
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            className="admin-secondary-button"
+            type="button"
+            onClick={onCancel}
+            disabled={isSaving}
+          >
+            Keep Player
+          </button>
+          <button
+            className={isDelete ? 'admin-danger-solid-button' : 'admin-primary-button'}
+            type="button"
+            onClick={onConfirm}
+            disabled={isSaving}
+          >
+            {isSaving ? 'Saving...' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
