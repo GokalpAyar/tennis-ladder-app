@@ -116,10 +116,7 @@ function AccountPage() {
     }
 
     const { data, error } = await supabase
-      .from('profiles')
-      .update({ full_name: trimmedName })
-      .eq('id', currentUser.id)
-      .select('full_name, email, status')
+      .rpc('update_my_profile_full_name', { new_full_name: trimmedName })
       .maybeSingle();
 
     setIsSavingProfile(false);

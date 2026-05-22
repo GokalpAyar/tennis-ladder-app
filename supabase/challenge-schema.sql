@@ -250,6 +250,7 @@ declare
   loser_id uuid;
   challenger_rank integer;
   opponent_rank integer;
+  temp_rank integer;
   updated_count integer;
 begin
   if new.status <> 'completed' then
@@ -316,8 +317,12 @@ begin
   end if;
 
   if new.winner_id = new.challenger_id and challenger_rank > opponent_rank then
+    select coalesce(max(rank_position), 0) + 10000
+    into temp_rank
+    from public.ladder_rankings;
+
     update public.ladder_rankings
-    set rank_position = -1
+    set rank_position = temp_rank
     where player_id = new.challenger_id;
 
     get diagnostics updated_count = row_count;
@@ -361,6 +366,75 @@ for each row
 when (new.status = 'completed')
 execute function public.record_completed_match_stats();
 
+create or replace function public.is_admin(user_id uuid default auth.uid())
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles
+    where id = user_id
+      and role = 'admin'
+  );
+$$;
+
+create or replace function public.prevent_profile_privilege_escalation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.is_admin(auth.uid()) then
+    return new;
+  end if;
+
+  if auth.uid() = old.id then
+    if (to_jsonb(new) - 'full_name') is distinct from (to_jsonb(old) - 'full_name') then
+      raise exception 'You can only update your full name.';
+    end if;
+
+    return new;
+  end if;
+
+  raise exception 'You are not allowed to update this profile.';
+end;
+$$;
+
+drop trigger if exists prevent_profile_privilege_escalation on public.profiles;
+
+create trigger prevent_profile_privilege_escalation
+before update on public.profiles
+for each row
+execute function public.prevent_profile_privilege_escalation();
+
+create or replace function public.update_my_profile_full_name(new_full_name text)
+returns table (
+  full_name text,
+  email text,
+  status text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'You must be logged in to update your profile.';
+  end if;
+
+  return query
+  update public.profiles as profile_row
+  set full_name = nullif(trim(new_full_name), '')
+  where profile_row.id = auth.uid()
+  returning profile_row.full_name, profile_row.email, profile_row.status;
+end;
+$$;
+
+grant execute on function public.update_my_profile_full_name(text) to authenticated;
+
 alter table public.profiles enable row level security;
 alter table public.ladder_rankings enable row level security;
 alter table public.matches enable row level security;
@@ -368,10 +442,17 @@ alter table public.matches enable row level security;
 drop policy if exists "Authenticated users can read profiles" on public.profiles;
 drop policy if exists "Users can create their own profile" on public.profiles;
 drop policy if exists "Users can update their profile" on public.profiles;
+drop policy if exists "Admins can update profiles" on public.profiles;
 drop policy if exists "Authenticated users can read ladder rankings" on public.ladder_rankings;
+drop policy if exists "Users can join ladder" on public.ladder_rankings;
+drop policy if exists "Admins can insert ladder rankings" on public.ladder_rankings;
+drop policy if exists "Admins can update ladder rankings" on public.ladder_rankings;
+drop policy if exists "Admins can delete ladder rankings" on public.ladder_rankings;
 drop policy if exists "Profiles can read their matches" on public.matches;
 drop policy if exists "Profiles can create their own challenges" on public.matches;
 drop policy if exists "Profiles can update their matches" on public.matches;
+drop policy if exists "Admins can read all matches" on public.matches;
+drop policy if exists "Admins can update all matches" on public.matches;
 
 create policy "Authenticated users can read profiles"
 on public.profiles
@@ -389,12 +470,12 @@ with check (
   and status = 'pending'
 );
 
-create policy "Users can update their profile"
+create policy "Admins can update profiles"
 on public.profiles
 for update
 to authenticated
-using (auth.uid() = id)
-with check (auth.uid() = id);
+using (public.is_admin())
+with check (public.is_admin());
 
 create policy "Authenticated users can read ladder rankings"
 on public.ladder_rankings
@@ -402,11 +483,30 @@ for select
 to authenticated
 using (true);
 
+create policy "Admins can insert ladder rankings"
+on public.ladder_rankings
+for insert
+to authenticated
+with check (public.is_admin());
+
+create policy "Admins can update ladder rankings"
+on public.ladder_rankings
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+create policy "Admins can delete ladder rankings"
+on public.ladder_rankings
+for delete
+to authenticated
+using (public.is_admin());
+
 create policy "Profiles can read their matches"
 on public.matches
 for select
 to authenticated
-using (auth.uid() = challenger_id or auth.uid() = opponent_id);
+using (auth.uid() = challenger_id or auth.uid() = opponent_id or public.is_admin());
 
 create policy "Profiles can create their own challenges"
 on public.matches
@@ -418,5 +518,18 @@ create policy "Profiles can update their matches"
 on public.matches
 for update
 to authenticated
-using (auth.uid() = challenger_id or auth.uid() = opponent_id)
-with check (auth.uid() = challenger_id or auth.uid() = opponent_id);
+using (auth.uid() = challenger_id or auth.uid() = opponent_id or public.is_admin())
+with check (auth.uid() = challenger_id or auth.uid() = opponent_id or public.is_admin());
+
+create policy "Admins can read all matches"
+on public.matches
+for select
+to authenticated
+using (public.is_admin());
+
+create policy "Admins can update all matches"
+on public.matches
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());

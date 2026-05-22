@@ -318,29 +318,15 @@ function AdminPage() {
     setMessage('');
     setErrorMessage('');
 
-    const { error: rankingError } = await supabase.from('ladder_rankings').insert({
-      player_id: profileId,
-      rank_position: rankPosition,
-      wins: 0,
-      losses: 0,
+    const { error } = await supabase.rpc('admin_approve_player_with_rank', {
+      target_profile_id: profileId,
+      target_rank_position: rankPosition,
     });
-
-    if (rankingError) {
-      setActionId(null);
-      setErrorMessage(rankingError.message);
-      return;
-    }
-
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ status: 'approved', role: 'player' })
-      .eq('id', profileId);
 
     setActionId(null);
 
-    if (profileError) {
-      await supabase.from('ladder_rankings').delete().eq('player_id', profileId);
-      setErrorMessage(profileError.message);
+    if (error) {
+      setErrorMessage(error.message);
       return;
     }
 
@@ -416,24 +402,18 @@ function AdminPage() {
     setMessage('');
     setErrorMessage('');
 
-    const [{ error: profileError }, { error: rankingError }] = await Promise.all([
-      supabase.from('profiles').update({ full_name: fullName }).eq('id', ranking.player_id),
-      supabase
-        .from('ladder_rankings')
-        .update({
-          rank_position: draft.rank_position,
-          wins: draft.wins,
-          losses: draft.losses,
-        })
-        .eq('id', ranking.id),
-    ]);
+    const { error } = await supabase.rpc('admin_update_player_ladder_row', {
+      target_full_name: fullName,
+      target_losses: draft.losses,
+      target_rank_position: draft.rank_position,
+      target_ranking_id: ranking.id,
+      target_wins: draft.wins,
+    });
 
     setActionId(null);
 
-    if (profileError || rankingError) {
-      setErrorMessage(
-        profileError?.message ?? rankingError?.message ?? 'Unable to save player changes.',
-      );
+    if (error) {
+      setErrorMessage(error.message);
       return;
     }
 
@@ -490,6 +470,11 @@ function AdminPage() {
   }
 
   async function updateMatchStatus(matchId: string, status: MatchStatus) {
+    if (status === 'completed') {
+      setErrorMessage('Completed matches require a winner. Use the player winner submission flow.');
+      return;
+    }
+
     if (status === 'canceled') {
       const confirmed = window.confirm('Cancel this match?');
 
@@ -1171,7 +1156,9 @@ function AdminPage() {
                         <option value="time_proposed">Time Proposed</option>
                         <option value="declined">Declined</option>
                         <option value="scheduled">Scheduled</option>
-                        <option value="completed">Completed</option>
+                        <option value="completed" disabled>
+                          Completed (winner required)
+                        </option>
                         <option value="canceled">Canceled</option>
                         <option value="expired">Expired</option>
                       </select>

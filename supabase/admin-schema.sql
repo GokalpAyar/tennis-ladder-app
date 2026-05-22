@@ -63,6 +63,7 @@ declare
   loser_id uuid;
   challenger_rank integer;
   opponent_rank integer;
+  temp_rank integer;
   updated_count integer;
 begin
   if new.status <> 'completed' then
@@ -129,8 +130,12 @@ begin
   end if;
 
   if new.winner_id = new.challenger_id and challenger_rank > opponent_rank then
+    select coalesce(max(rank_position), 0) + 10000
+    into temp_rank
+    from public.ladder_rankings;
+
     update public.ladder_rankings
-    set rank_position = -1
+    set rank_position = temp_rank
     where player_id = new.challenger_id;
 
     get diagnostics updated_count = row_count;
@@ -280,6 +285,220 @@ as $$
   );
 $$;
 
+create or replace function public.prevent_profile_privilege_escalation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.is_admin(auth.uid()) then
+    return new;
+  end if;
+
+  if auth.uid() = old.id then
+    if (to_jsonb(new) - 'full_name') is distinct from (to_jsonb(old) - 'full_name') then
+      raise exception 'You can only update your full name.';
+    end if;
+
+    return new;
+  end if;
+
+  raise exception 'You are not allowed to update this profile.';
+end;
+$$;
+
+drop trigger if exists prevent_profile_privilege_escalation on public.profiles;
+
+create trigger prevent_profile_privilege_escalation
+before update on public.profiles
+for each row
+execute function public.prevent_profile_privilege_escalation();
+
+create or replace function public.update_my_profile_full_name(new_full_name text)
+returns table (
+  full_name text,
+  email text,
+  status text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'You must be logged in to update your profile.';
+  end if;
+
+  return query
+  update public.profiles as profile_row
+  set full_name = nullif(trim(new_full_name), '')
+  where profile_row.id = auth.uid()
+  returning profile_row.full_name, profile_row.email, profile_row.status;
+end;
+$$;
+
+grant execute on function public.update_my_profile_full_name(text) to authenticated;
+
+create or replace function public.admin_approve_player_with_rank(
+  target_profile_id uuid,
+  target_rank_position integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  max_rank integer;
+  safe_rank integer;
+  temp_offset integer;
+begin
+  if not public.is_admin(auth.uid()) then
+    raise exception 'Admin access required.';
+  end if;
+
+  if target_profile_id is null then
+    raise exception 'Player profile is required.';
+  end if;
+
+  if target_rank_position is null or target_rank_position < 1 then
+    raise exception 'Rank must be 1 or greater.';
+  end if;
+
+  if exists (
+    select 1
+    from public.ladder_rankings
+    where player_id = target_profile_id
+  ) then
+    raise exception 'Player is already on the ladder.';
+  end if;
+
+  select coalesce(max(rank_position), 0)
+  into max_rank
+  from public.ladder_rankings;
+
+  safe_rank := least(target_rank_position, max_rank + 1);
+  temp_offset := greatest(10000, max_rank + 10000);
+
+  update public.ladder_rankings
+  set rank_position = rank_position + temp_offset
+  where rank_position >= safe_rank;
+
+  insert into public.ladder_rankings (player_id, rank_position, wins, losses)
+  values (target_profile_id, safe_rank, 0, 0);
+
+  update public.ladder_rankings
+  set rank_position = rank_position - temp_offset + 1
+  where rank_position >= safe_rank + temp_offset;
+
+  update public.profiles
+  set status = 'approved',
+      role = 'player'
+  where id = target_profile_id;
+end;
+$$;
+
+create or replace function public.admin_update_player_ladder_row(
+  target_ranking_id uuid,
+  target_full_name text,
+  target_rank_position integer,
+  target_wins integer,
+  target_losses integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_player_id uuid;
+  current_rank integer;
+  max_rank integer;
+  safe_rank integer;
+  safe_wins integer;
+  safe_losses integer;
+  temp_rank integer;
+  temp_offset integer;
+begin
+  if not public.is_admin(auth.uid()) then
+    raise exception 'Admin access required.';
+  end if;
+
+  if target_rank_position is null or target_rank_position < 1 then
+    raise exception 'Rank must be 1 or greater.';
+  end if;
+
+  if target_wins is null or target_wins < 0 then
+    raise exception 'Wins must be 0 or greater.';
+  end if;
+
+  if target_losses is null or target_losses < 0 then
+    raise exception 'Losses must be 0 or greater.';
+  end if;
+
+  select player_id, rank_position
+  into current_player_id, current_rank
+  from public.ladder_rankings
+  where id = target_ranking_id;
+
+  if current_player_id is null then
+    raise exception 'Ladder ranking was not found.';
+  end if;
+
+  select coalesce(max(rank_position), current_rank)
+  into max_rank
+  from public.ladder_rankings;
+
+  safe_rank := least(target_rank_position, max_rank);
+  safe_wins := target_wins;
+  safe_losses := target_losses;
+  temp_offset := greatest(10000, max_rank + 10000);
+  temp_rank := max_rank + temp_offset + 1;
+
+  update public.profiles
+  set full_name = nullif(trim(target_full_name), '')
+  where id = current_player_id;
+
+  if safe_rank <> current_rank then
+    update public.ladder_rankings
+    set rank_position = temp_rank
+    where id = target_ranking_id;
+
+    if safe_rank < current_rank then
+      update public.ladder_rankings
+      set rank_position = rank_position + temp_offset
+      where rank_position >= safe_rank
+        and rank_position < current_rank;
+
+      update public.ladder_rankings
+      set rank_position = rank_position - temp_offset + 1
+      where rank_position >= safe_rank + temp_offset
+        and rank_position < current_rank + temp_offset;
+    else
+      update public.ladder_rankings
+      set rank_position = rank_position + temp_offset
+      where rank_position > current_rank
+        and rank_position <= safe_rank;
+
+      update public.ladder_rankings
+      set rank_position = rank_position - temp_offset - 1
+      where rank_position > current_rank + temp_offset
+        and rank_position <= safe_rank + temp_offset;
+    end if;
+  end if;
+
+  update public.ladder_rankings
+  set rank_position = safe_rank,
+      wins = safe_wins,
+      losses = safe_losses
+  where id = target_ranking_id;
+end;
+$$;
+
+grant execute on function public.admin_approve_player_with_rank(uuid, integer) to authenticated;
+grant execute on function public.admin_update_player_ladder_row(uuid, text, integer, integer, integer) to authenticated;
+
 create or replace function public.handle_new_user_profile()
 returns trigger
 language plpgsql
@@ -337,13 +556,6 @@ with check (
   and role = 'player'
   and status = 'pending'
 );
-
-create policy "Users can update their profile"
-on public.profiles
-for update
-to authenticated
-using (auth.uid() = id)
-with check (auth.uid() = id);
 
 create policy "Admins can update profiles"
 on public.profiles
