@@ -113,7 +113,7 @@ Expected result:
 ## 8. Cancel
 
 Steps:
-1. With an active or scheduled match, click Cancel Match.
+1. With a pending, accepted, or time proposed match, click Cancel Match.
 2. Enter an optional reason if shown.
 3. Confirm cancellation.
 
@@ -123,6 +123,22 @@ Expected result:
 - `canceled_by` is the current user.
 - `cancel_reason` is saved if provided.
 - Match disappears from active/scheduled sections.
+
+Scheduled cancellation check:
+1. Schedule a new match.
+2. Verify the scheduled match does not show Cancel Match.
+3. Click Request Cancellation.
+4. Enter a short reason and confirm.
+5. Log in as the other player.
+6. Review the cancellation request.
+7. Click either Accept Cancellation or Keep Match Scheduled.
+
+Expected result:
+- Requesting cancellation sets `status = cancellation_requested`.
+- `cancellation_requested_by`, `cancellation_reason`, and `cancellation_requested_at` are saved.
+- Other player sees the requester name and reason.
+- Accept Cancellation sets `status = canceled`, `canceled_by` to the original requester, and `canceled_at`.
+- Keep Match Scheduled returns `status = scheduled` and clears cancellation request fields.
 
 ## 9. Reschedule
 

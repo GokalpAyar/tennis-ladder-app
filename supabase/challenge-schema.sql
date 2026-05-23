@@ -52,6 +52,9 @@ add column if not exists opponent_agreed_at timestamptz,
 add column if not exists cancel_reason text,
 add column if not exists canceled_at timestamptz,
 add column if not exists canceled_by uuid references public.profiles(id) on delete set null,
+add column if not exists cancellation_requested_by uuid references public.profiles(id) on delete set null,
+add column if not exists cancellation_reason text,
+add column if not exists cancellation_requested_at timestamptz,
 add column if not exists winner_id uuid references public.profiles(id) on delete set null,
 add column if not exists score text,
 add column if not exists stats_recorded boolean not null default false,
@@ -63,7 +66,7 @@ drop constraint if exists matches_status_check;
 
 alter table public.matches
 add constraint matches_status_check
-check (status in ('pending', 'accepted', 'time_proposed', 'declined', 'scheduled', 'completed', 'canceled', 'expired'));
+check (status in ('pending', 'accepted', 'time_proposed', 'declined', 'scheduled', 'cancellation_requested', 'completed', 'canceled', 'expired'));
 
 alter table public.matches
 drop constraint if exists matches_distinct_players_check;
@@ -72,12 +75,24 @@ alter table public.matches
 add constraint matches_distinct_players_check
 check (challenger_id <> opponent_id);
 
-create unique index if not exists one_active_match_per_profile_pair
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  title text not null,
+  message text not null,
+  type text not null default 'match',
+  is_read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+drop index if exists public.one_active_match_per_profile_pair;
+
+create unique index one_active_match_per_profile_pair
 on public.matches (
   least(challenger_id, opponent_id),
   greatest(challenger_id, opponent_id)
 )
-where status in ('pending', 'accepted', 'time_proposed', 'scheduled');
+where status in ('pending', 'accepted', 'time_proposed', 'scheduled', 'cancellation_requested');
 
 -- Force-refresh challenge validation. If an older installed function referenced
 -- ladder_rankings.rank, dropping it first removes that stale function body.
@@ -153,14 +168,14 @@ returns trigger
 language plpgsql
 as $$
 begin
-  if new.status not in ('pending', 'accepted', 'time_proposed', 'scheduled') then
+  if new.status not in ('pending', 'accepted', 'time_proposed', 'scheduled', 'cancellation_requested') then
     return new;
   end if;
 
   if exists (
     select 1
     from public.matches existing_match
-    where existing_match.status in ('pending', 'accepted', 'time_proposed', 'scheduled')
+    where existing_match.status in ('pending', 'accepted', 'time_proposed', 'scheduled', 'cancellation_requested')
       and (tg_op = 'INSERT' or existing_match.id <> new.id)
       and (
         existing_match.challenger_id = new.challenger_id
@@ -191,7 +206,7 @@ declare
   new_match_start timestamptz;
   new_match_end timestamptz;
 begin
-  if new.status <> 'scheduled' then
+  if new.status not in ('scheduled', 'cancellation_requested') then
     return new;
   end if;
 
@@ -208,7 +223,7 @@ begin
   if exists (
     select 1
     from public.matches existing_match
-    where existing_match.status = 'scheduled'
+    where existing_match.status in ('scheduled', 'cancellation_requested')
       and (tg_op = 'INSERT' or existing_match.id <> new.id)
       and existing_match.proposed_match_at is not null
       and (
@@ -438,6 +453,7 @@ grant execute on function public.update_my_profile_full_name(text) to authentica
 alter table public.profiles enable row level security;
 alter table public.ladder_rankings enable row level security;
 alter table public.matches enable row level security;
+alter table public.notifications enable row level security;
 
 drop policy if exists "Authenticated users can read profiles" on public.profiles;
 drop policy if exists "Users can create their own profile" on public.profiles;
@@ -454,6 +470,9 @@ drop policy if exists "Profiles can create their own challenges" on public.match
 drop policy if exists "Profiles can update their matches" on public.matches;
 drop policy if exists "Admins can read all matches" on public.matches;
 drop policy if exists "Admins can update all matches" on public.matches;
+drop policy if exists "Users can read their notifications" on public.notifications;
+drop policy if exists "Users can update their notifications" on public.notifications;
+drop policy if exists "Authenticated users can create notifications" on public.notifications;
 
 create policy "Authenticated users can read profiles"
 on public.profiles
@@ -534,3 +553,22 @@ for update
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+create policy "Users can read their notifications"
+on public.notifications
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+create policy "Users can update their notifications"
+on public.notifications
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "Authenticated users can create notifications"
+on public.notifications
+for insert
+to authenticated
+with check (true);

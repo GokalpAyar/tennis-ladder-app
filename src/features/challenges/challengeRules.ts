@@ -27,6 +27,7 @@ export type MatchStatus =
   | 'time_proposed'
   | 'declined'
   | 'scheduled'
+  | 'cancellation_requested'
   | 'completed'
   | 'canceled'
   | 'disputed'
@@ -77,6 +78,7 @@ const blockingMatchStatuses = new Set<MatchStatus>([
   'accepted',
   'time_proposed',
   'scheduled',
+  'cancellation_requested',
 ]);
 
 export function isBlockingMatchStatus(status: MatchStatus) {

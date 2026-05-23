@@ -41,6 +41,9 @@ type Match = {
   cancel_reason: string | null;
   canceled_at: string | null;
   canceled_by: string | null;
+  cancellation_requested_by: string | null;
+  cancellation_reason: string | null;
+  cancellation_requested_at: string | null;
   winner_id: string | null;
   stats_recorded: boolean;
   ranking_updated: boolean;
@@ -68,7 +71,6 @@ const CANCELABLE_MATCH_STATUSES: MatchStatus[] = [
   'pending',
   'accepted',
   'time_proposed',
-  'scheduled',
 ];
 const ACTIVE_MATCH_MESSAGE =
   'You already have an active match. Complete or cancel it before starting another.';
@@ -150,7 +152,9 @@ function ChallengePlayerSystem({
   }, [blockingMatches, currentPlayer]);
 
   const scheduledMatches = useMemo(() => {
-    return matches.filter((match) => match.status === 'scheduled');
+    return matches.filter(
+      (match) => match.status === 'scheduled' || match.status === 'cancellation_requested',
+    );
   }, [matches]);
 
   const canceledMatches = useMemo(() => {
@@ -228,7 +232,7 @@ function ChallengePlayerSystem({
     const matchSelect = supabase
       .from('matches')
       .select(
-        'id, challenger_id, opponent_id, status, proposed_match_at, proposed_match_options, scheduled_match_ends_at, proposed_by_player_id, challenger_agreed_at, opponent_agreed_at, cancel_reason, canceled_at, canceled_by, winner_id, stats_recorded, ranking_updated, created_at',
+        'id, challenger_id, opponent_id, status, proposed_match_at, proposed_match_options, scheduled_match_ends_at, proposed_by_player_id, challenger_agreed_at, opponent_agreed_at, cancel_reason, canceled_at, canceled_by, cancellation_requested_by, cancellation_reason, cancellation_requested_at, winner_id, stats_recorded, ranking_updated, created_at',
       );
 
     const { data: matchRows, error: matchesError } = await (adminPreview
@@ -427,7 +431,7 @@ function ChallengePlayerSystem({
     const { data, error } = await supabase
       .from('matches')
       .select('id, proposed_match_at, scheduled_match_ends_at')
-      .eq('status', 'scheduled')
+      .in('status', ['scheduled', 'cancellation_requested'])
       .neq('id', match.id)
       .or(
         [
@@ -490,6 +494,9 @@ function ChallengePlayerSystem({
         cancel_reason: cancelReason || null,
         canceled_at: new Date().toISOString(),
         canceled_by: currentPlayer.id,
+        cancellation_requested_at: null,
+        cancellation_reason: null,
+        cancellation_requested_by: null,
       })
       .eq('id', match.id)
       .select('id')
@@ -517,6 +524,240 @@ function ChallengePlayerSystem({
 
     setMessage('Match canceled.');
     await loadChallengeData();
+  }
+
+  async function requestCancellation(match: Match) {
+    if (!currentPlayer || match.status !== 'scheduled') {
+      return;
+    }
+
+    const reason = window.prompt('Please enter a short reason for requesting cancellation.')?.trim() ?? '';
+
+    if (!reason) {
+      setErrorMessage('Please enter a short reason before requesting cancellation.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Request cancellation for this scheduled match? Your opponent must accept before the match is canceled.',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionId(match.id);
+    setCancelingMatchId(match.id);
+    setMessage('');
+    setErrorMessage('');
+
+    const { data, error } = await supabase
+      .from('matches')
+      .update({
+        cancellation_reason: reason,
+        cancellation_requested_at: new Date().toISOString(),
+        cancellation_requested_by: currentPlayer.id,
+        status: 'cancellation_requested',
+      })
+      .eq('id', match.id)
+      .eq('status', 'scheduled')
+      .select('id')
+      .maybeSingle();
+
+    setActionId(null);
+    setCancelingMatchId(null);
+
+    if (error) {
+      console.error('Request cancellation Supabase error:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      setErrorMessage(formatSupabaseError(error));
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage('Cancellation could not be requested because this match changed.');
+      await loadChallengeData();
+      return;
+    }
+
+    await createMatchNotification({
+      message: `${currentPlayer.name} requested to cancel your scheduled match. Reason: ${reason}`,
+      title: 'Cancellation requested',
+      userId: getOtherPlayerId(match, currentPlayer.id),
+    });
+
+    setMessage('Cancellation request sent.');
+    await loadChallengeData();
+  }
+
+  async function acceptCancellation(match: Match) {
+    if (!currentPlayer || match.status !== 'cancellation_requested') {
+      return;
+    }
+
+    if (match.cancellation_requested_by === currentPlayer.id) {
+      setErrorMessage('Waiting for your opponent to respond to your cancellation request.');
+      return;
+    }
+
+    const requesterId = match.cancellation_requested_by;
+
+    if (!requesterId) {
+      setErrorMessage('Cancellation requester is missing. Please refresh and try again.');
+      return;
+    }
+
+    const confirmed = window.confirm('Accept this cancellation request and cancel the match?');
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionId(match.id);
+    setCancelingMatchId(match.id);
+    setMessage('');
+    setErrorMessage('');
+
+    const { data, error } = await supabase
+      .from('matches')
+      .update({
+        cancel_reason: match.cancellation_reason || null,
+        canceled_at: new Date().toISOString(),
+        canceled_by: requesterId,
+        status: 'canceled',
+      })
+      .eq('id', match.id)
+      .eq('status', 'cancellation_requested')
+      .select('id')
+      .maybeSingle();
+
+    setActionId(null);
+    setCancelingMatchId(null);
+
+    if (error) {
+      console.error('Accept cancellation Supabase error:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      setErrorMessage(formatSupabaseError(error));
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage('Cancellation could not be accepted because this match changed.');
+      await loadChallengeData();
+      return;
+    }
+
+    await createMatchNotification({
+      message: `${currentPlayer.name} accepted your cancellation request.`,
+      title: 'Cancellation accepted',
+      userId: requesterId,
+    });
+
+    setMessage('Match canceled.');
+    await loadChallengeData();
+  }
+
+  async function keepMatchScheduled(match: Match) {
+    if (!currentPlayer || match.status !== 'cancellation_requested') {
+      return;
+    }
+
+    if (match.cancellation_requested_by === currentPlayer.id) {
+      setErrorMessage('Waiting for your opponent to respond to your cancellation request.');
+      return;
+    }
+
+    const requesterId = match.cancellation_requested_by;
+
+    if (!requesterId) {
+      setErrorMessage('Cancellation requester is missing. Please refresh and try again.');
+      return;
+    }
+
+    const confirmed = window.confirm('Keep this match scheduled?');
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionId(match.id);
+    setMessage('');
+    setErrorMessage('');
+
+    const { data, error } = await supabase
+      .from('matches')
+      .update({
+        cancellation_reason: null,
+        cancellation_requested_at: null,
+        cancellation_requested_by: null,
+        status: 'scheduled',
+      })
+      .eq('id', match.id)
+      .eq('status', 'cancellation_requested')
+      .select('id')
+      .maybeSingle();
+
+    setActionId(null);
+
+    if (error) {
+      console.error('Keep scheduled Supabase error:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      setErrorMessage(formatSupabaseError(error));
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage('The match could not be kept scheduled because it changed.');
+      await loadChallengeData();
+      return;
+    }
+
+    await createMatchNotification({
+      message: `${currentPlayer.name} kept your match scheduled.`,
+      title: 'Cancellation declined',
+      userId: requesterId,
+    });
+
+    setMessage('Match remains scheduled.');
+    await loadChallengeData();
+  }
+
+  async function createMatchNotification({
+    message: notificationMessage,
+    title,
+    userId: notificationUserId,
+  }: {
+    message: string;
+    title: string;
+    userId: string;
+  }) {
+    const { error } = await supabase.from('notifications').insert({
+      message: notificationMessage,
+      title,
+      type: 'match',
+      user_id: notificationUserId,
+    });
+
+    if (error) {
+      console.error('Create notification Supabase error:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+    }
   }
 
   function requestReschedule(match: Match) {
@@ -1020,9 +1261,11 @@ function ChallengePlayerSystem({
           sectionClass={cardClass}
           submittingWinnerId={submittingWinnerId}
           onCancelReschedule={cancelReschedule}
-          onCancel={cancelMatch}
+          onAcceptCancellation={acceptCancellation}
+          onKeepScheduled={keepMatchScheduled}
           onProposalChange={updateTimeProposalDraft}
           onProposeTime={proposeMatchTime}
+          onRequestCancellation={requestCancellation}
           onRequestReschedule={requestReschedule}
           onSubmitWinner={submitWinner}
           onWinnerChange={updateWinnerDraft}
@@ -1342,9 +1585,11 @@ function ChallengePlayerSystem({
         sectionClass={cardClass}
         submittingWinnerId={submittingWinnerId}
         onCancelReschedule={cancelReschedule}
-        onCancel={cancelMatch}
+        onAcceptCancellation={acceptCancellation}
+        onKeepScheduled={keepMatchScheduled}
         onProposalChange={updateTimeProposalDraft}
         onProposeTime={proposeMatchTime}
+        onRequestCancellation={requestCancellation}
         onRequestReschedule={requestReschedule}
         onSubmitWinner={submitWinner}
         onWinnerChange={updateWinnerDraft}
@@ -1434,13 +1679,15 @@ type ScheduledMatchesSectionProps = {
   submittingWinnerId: string | null;
   winnerDrafts: Record<string, WinnerDraft>;
   onCancelReschedule: (matchId: string) => void;
-  onCancel: (match: Match) => void;
+  onAcceptCancellation: (match: Match) => void;
+  onKeepScheduled: (match: Match) => void;
   onProposalChange: (
     matchId: string,
     index: number,
     nextDraft: Partial<TimeProposalDraft>,
   ) => void;
   onProposeTime: (match: Match, event: FormEvent<HTMLFormElement>) => void;
+  onRequestCancellation: (match: Match) => void;
   onRequestReschedule: (match: Match) => void;
   onSubmitWinner: (match: Match, event: FormEvent<HTMLFormElement>) => void;
   onWinnerChange: (matchId: string, nextDraft: Partial<WinnerDraft>) => void;
@@ -1458,9 +1705,11 @@ function ScheduledMatchesSection({
   submittingWinnerId,
   winnerDrafts,
   onCancelReschedule,
-  onCancel,
+  onAcceptCancellation,
+  onKeepScheduled,
   onProposalChange,
   onProposeTime,
+  onRequestCancellation,
   onRequestReschedule,
   onSubmitWinner,
   onWinnerChange,
@@ -1492,6 +1741,12 @@ function ScheduledMatchesSection({
             >
               {(() => {
                 const isRequestingNewTimes = reschedulingMatchIds.has(match.id);
+                const isCancellationRequested = match.status === 'cancellation_requested';
+                const isCancellationRequester =
+                  match.cancellation_requested_by === currentPlayer.id;
+                const cancellationRequesterName = match.cancellation_requested_by
+                  ? getPlayerName(match.cancellation_requested_by, currentPlayer, playersById)
+                  : 'A player';
 
                 return (
                   <>
@@ -1510,8 +1765,46 @@ function ScheduledMatchesSection({
                     </span>
                   </p>
                 </div>
-                <StatusBadge label="Scheduled" />
+                <StatusBadge label={getStatusLabel(match)} />
               </div>
+              {isCancellationRequested && (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+                  <p className="text-sm font-black text-amber-950">
+                    {isCancellationRequester
+                      ? 'You requested to cancel this match.'
+                      : `${cancellationRequesterName} requested to cancel this match.`}
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-amber-900">
+                    Reason: {match.cancellation_reason || 'No reason provided.'}
+                  </p>
+                  {isCancellationRequester ? (
+                    <p className="mt-3 text-sm text-amber-900">
+                      Waiting for your opponent to accept the cancellation or keep the match scheduled.
+                    </p>
+                  ) : (
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                      <button
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-red-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        type="button"
+                        onClick={() => onAcceptCancellation(match)}
+                        disabled={cancelingMatchId === match.id || actionId === match.id}
+                      >
+                        <XIcon />
+                        {cancelingMatchId === match.id ? 'Canceling...' : 'Accept Cancellation'}
+                      </button>
+                      <button
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        type="button"
+                        onClick={() => onKeepScheduled(match)}
+                        disabled={actionId === match.id}
+                      >
+                        <CheckIcon />
+                        Keep Match Scheduled
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 shadow-sm">
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
                   Final Scheduled Time
@@ -1531,7 +1824,7 @@ function ScheduledMatchesSection({
                 opponentName={getOpponentName(match, currentPlayer, playersById)}
                 showActions={false}
               />
-              {isRequestingNewTimes && (
+              {isRequestingNewTimes && !isCancellationRequested && (
                 <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -1559,6 +1852,7 @@ function ScheduledMatchesSection({
                   />
                 </div>
               )}
+              {!isCancellationRequested && (
               <form
                 className="mt-4 rounded-xl border border-line-200 bg-white p-4"
                 onSubmit={(event) => onSubmitWinner(match, event)}
@@ -1611,7 +1905,10 @@ function ScheduledMatchesSection({
                   </button>
                 </div>
               </form>
+              )}
               <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                {!isCancellationRequested && (
+                  <>
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
                   type="button"
@@ -1624,12 +1921,14 @@ function ScheduledMatchesSection({
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-full border border-red-300 bg-white px-4 py-2.5 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                   type="button"
-                  onClick={() => onCancel(match)}
+                  onClick={() => onRequestCancellation(match)}
                   disabled={cancelingMatchId === match.id || actionId === match.id}
                 >
                   <XIcon />
-                  {cancelingMatchId === match.id ? 'Canceling...' : 'Cancel Match'}
+                  {cancelingMatchId === match.id ? 'Requesting...' : 'Request Cancellation'}
                 </button>
+                  </>
+                )}
               </div>
                   </>
                 );
@@ -2394,6 +2693,7 @@ function StatusBadge({ label }: { label: string }) {
     Accepted: 'border-blue-200 bg-blue-50 text-blue-800',
     'Time Proposed': 'border-emerald-200 bg-emerald-50 text-emerald-800',
     Scheduled: 'border-emerald-300 bg-emerald-600 text-white',
+    'Cancellation Requested': 'border-amber-300 bg-amber-50 text-amber-800',
     Completed: 'border-slate-200 bg-slate-100 text-slate-700',
     Canceled: 'border-red-200 bg-red-50 text-red-700',
     Disputed: 'border-red-300 bg-red-100 text-red-800',
@@ -3021,6 +3321,21 @@ function getDashboardMatchSummary(
     };
   }
 
+  if (match.status === 'cancellation_requested') {
+    const requesterName = match.cancellation_requested_by
+      ? getPlayerName(match.cancellation_requested_by, currentPlayer, playersById)
+      : opponentName;
+    const currentUserRequested = match.cancellation_requested_by === currentPlayer.id;
+
+    return {
+      actionLabel: 'Review Match',
+      description: currentUserRequested
+        ? `Waiting for ${opponentName} to respond.`
+        : `${requesterName} requested to cancel this match.`,
+      title: 'Cancellation requested',
+    };
+  }
+
   return {
     actionLabel: 'View Activities',
     description: getStatusLabel(match),
@@ -3030,6 +3345,10 @@ function getDashboardMatchSummary(
 
 function isCurrentUserMatchPlayer(match: Match, currentUserId: string) {
   return match.challenger_id === currentUserId || match.opponent_id === currentUserId;
+}
+
+function getOtherPlayerId(match: Match, currentPlayerId: string) {
+  return match.challenger_id === currentPlayerId ? match.opponent_id : match.challenger_id;
 }
 
 function getOpponentName(
@@ -3108,6 +3427,10 @@ function getStatusLabel(match: Match) {
     return 'Scheduled';
   }
 
+  if (match.status === 'cancellation_requested') {
+    return 'Cancellation Requested';
+  }
+
   if (match.status === 'pending') {
     return 'Pending';
   }
@@ -3140,6 +3463,10 @@ function isMatchActionNeeded(match: Match, currentPlayer: RankedPlayer) {
     return true;
   }
 
+  if (match.status === 'cancellation_requested') {
+    return match.cancellation_requested_by !== currentPlayer.id;
+  }
+
   return false;
 }
 
@@ -3154,6 +3481,10 @@ function getTimeProposalTurnMessage({
 }) {
   if (match.status === 'scheduled') {
     return 'Match scheduled';
+  }
+
+  if (match.status === 'cancellation_requested') {
+    return 'Cancellation requested';
   }
 
   if (match.proposed_match_options.length === 0) {

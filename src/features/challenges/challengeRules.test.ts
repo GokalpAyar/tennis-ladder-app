@@ -72,15 +72,22 @@ describe('one active match per player', () => {
       status: 'time_proposed',
     },
     { challenger_id: 'player-7', id: 'scheduled', opponent_id: 'player-8', status: 'scheduled' },
+    {
+      challenger_id: 'player-13',
+      id: 'cancellation-requested',
+      opponent_id: 'player-14',
+      status: 'cancellation_requested',
+    },
     { challenger_id: 'player-9', id: 'completed', opponent_id: 'player-10', status: 'completed' },
     { challenger_id: 'player-11', id: 'canceled', opponent_id: 'player-12', status: 'canceled' },
   ];
 
-  it('treats pending, accepted, time proposed, and scheduled as blocking', () => {
+  it('treats pending, accepted, time proposed, scheduled, and cancellation requested as blocking', () => {
     equal(playerHasBlockingMatch(matches, 'player-1'), true);
     equal(playerHasBlockingMatch(matches, 'player-4'), true);
     equal(playerHasBlockingMatch(matches, 'player-6'), true);
     equal(playerHasBlockingMatch(matches, 'player-8'), true);
+    equal(playerHasBlockingMatch(matches, 'player-14'), true);
   });
 
   it('does not count completed or canceled matches as active', () => {

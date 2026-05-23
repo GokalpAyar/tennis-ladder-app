@@ -26,6 +26,7 @@ type MatchStatus =
   | 'time_proposed'
   | 'declined'
   | 'scheduled'
+  | 'cancellation_requested'
   | 'completed'
   | 'canceled'
   | 'expired';
@@ -41,6 +42,9 @@ type Match = {
   cancel_reason?: string | null;
   canceled_at?: string | null;
   canceled_by?: string | null;
+  cancellation_requested_by?: string | null;
+  cancellation_reason?: string | null;
+  cancellation_requested_at?: string | null;
   winner_id?: string | null;
   created_at: string;
 };
@@ -136,7 +140,9 @@ function AdminPage() {
   }, [profiles, rankedPlayerIds]);
 
   const scheduledMatches = useMemo(() => {
-    return matches.filter((match) => match.status === 'scheduled');
+    return matches.filter(
+      (match) => match.status === 'scheduled' || match.status === 'cancellation_requested',
+    );
   }, [matches]);
 
   const completedMatches = useMemo(() => {
@@ -285,6 +291,12 @@ function AdminPage() {
       return matchesForActivityPlayer.filter(isProblemMatch);
     }
 
+    if (matchFilter === 'scheduled') {
+      return matchesForActivityPlayer.filter(
+        (match) => match.status === 'scheduled' || match.status === 'cancellation_requested',
+      );
+    }
+
     return matchesForActivityPlayer.filter((match) => match.status === matchFilter);
   }, [matchFilter, matchesForActivityPlayer]);
 
@@ -307,7 +319,9 @@ function AdminPage() {
       {
         id: 'scheduled',
         label: 'Scheduled',
-        count: matchesForActivityPlayer.filter((match) => match.status === 'scheduled').length,
+        count: matchesForActivityPlayer.filter(
+          (match) => match.status === 'scheduled' || match.status === 'cancellation_requested',
+        ).length,
       },
       {
         id: 'completed',
@@ -339,7 +353,7 @@ function AdminPage() {
         .order('rank_position', { ascending: true }),
       supabase
         .from('matches')
-        .select('id, challenger_id, opponent_id, status, proposed_match_at, proposed_by_player_id, scheduled_match_ends_at, cancel_reason, canceled_at, canceled_by, winner_id, created_at')
+        .select('id, challenger_id, opponent_id, status, proposed_match_at, proposed_by_player_id, scheduled_match_ends_at, cancel_reason, canceled_at, canceled_by, cancellation_requested_by, cancellation_reason, cancellation_requested_at, winner_id, created_at')
         .order('created_at', { ascending: false }),
     ]);
 
@@ -713,7 +727,7 @@ function AdminPage() {
           canceled_at: new Date().toISOString(),
           canceled_by: userId,
         })
-        .in('status', ['pending', 'accepted', 'time_proposed', 'scheduled']),
+        .in('status', ['pending', 'accepted', 'time_proposed', 'scheduled', 'cancellation_requested']),
     ]);
 
     setActionId(null);
@@ -1327,6 +1341,7 @@ function AdminPage() {
                                 <option value="time_proposed">Time Proposed</option>
                                 <option value="declined">Declined</option>
                                 <option value="scheduled">Scheduled</option>
+                                <option value="cancellation_requested">Cancellation Requested</option>
                                 <option value="completed" disabled>
                                   Completed (winner required)
                                 </option>
@@ -1592,6 +1607,7 @@ function getMatchStatusInfo(status: MatchStatus): StatusInfo {
   const labels: Record<MatchStatus, StatusInfo> = {
     accepted: { label: 'Time proposal needed', tone: 'blue' },
     canceled: { label: 'Canceled', tone: 'red' },
+    cancellation_requested: { label: 'Cancellation requested', tone: 'yellow' },
     completed: { label: 'Completed', tone: 'green' },
     declined: { label: 'Canceled', tone: 'red' },
     expired: { label: 'Canceled', tone: 'red' },
@@ -1770,11 +1786,11 @@ function comparePlayerRows(first: PlayerAdminRow, second: PlayerAdminRow) {
 }
 
 function isOpenMatch(match: Match) {
-  return ['pending', 'accepted', 'time_proposed', 'scheduled'].includes(match.status);
+  return ['pending', 'accepted', 'time_proposed', 'scheduled', 'cancellation_requested'].includes(match.status);
 }
 
 function isMatchNeedsAdminAttention(match: Match) {
-  return ['pending', 'accepted', 'time_proposed'].includes(match.status);
+  return ['pending', 'accepted', 'time_proposed', 'cancellation_requested'].includes(match.status);
 }
 
 function isProblemMatch(match: Match) {
@@ -1785,6 +1801,7 @@ function compareNeedsActionMatches(first: Match, second: Match) {
   const priority: Record<MatchStatus, number> = {
     accepted: 1,
     canceled: 5,
+    cancellation_requested: 3,
     completed: 5,
     declined: 5,
     expired: 5,
@@ -1827,6 +1844,12 @@ function getMatchActionText(match: Match, profilesById: Map<string, Profile>) {
     return `Scheduled: ${formatCompactDateTime(match.proposed_match_at)}`;
   }
 
+  if (match.status === 'cancellation_requested') {
+    return match.cancellation_reason
+      ? `Cancellation requested: ${match.cancellation_reason}`
+      : 'Cancellation requested';
+  }
+
   if (match.status === 'completed') {
     return `Completed: Winner ${getProfileName(profilesById.get(match.winner_id ?? ''))}`;
   }
@@ -1852,7 +1875,7 @@ function getMatchDetailItems(match: Match, profilesById: Map<string, Profile>) {
     });
   }
 
-  if (match.status === 'scheduled') {
+  if (match.status === 'scheduled' || match.status === 'cancellation_requested') {
     details.push({
       label: 'Scheduled Time',
       value: formatMatchTimeRange(match),

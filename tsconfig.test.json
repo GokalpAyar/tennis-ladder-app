@@ -14,5 +14,6 @@
     "src/test-node.d.ts",
     "src/features/challenges/challengeRules.ts",
     "src/pages/accountProfile.ts"
-  ]
+  ],
+  "exclude": []
 }
