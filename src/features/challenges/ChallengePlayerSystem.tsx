@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 type Profile = {
   id: string;
   full_name: string | null;
-  status: 'pending' | 'approved' | null;
+  status: 'pending' | 'approved' | 'rejected' | 'inactive' | null;
 };
 
 type RankedPlayer = {
@@ -262,17 +262,23 @@ function ChallengePlayerSystem({
     );
     const currentProfile = profilesById.get(userId);
     setProfileStatus(currentProfile?.status === 'approved' ? 'approved' : 'pending');
-    const rankedPlayers = (rankingRows ?? []).map((ranking) => {
-      const profile = profilesById.get(ranking.player_id);
+    const rankedPlayers = (rankingRows ?? [])
+      .map((ranking) => {
+        const profile = profilesById.get(ranking.player_id);
 
-      return {
-        id: ranking.player_id,
-        name: profile?.full_name ?? 'Unnamed player',
-        rankPosition: ranking.rank_position,
-        wins: ranking.wins ?? 0,
-        losses: ranking.losses ?? 0,
-      };
-    });
+        if (profile?.status !== 'approved') {
+          return null;
+        }
+
+        return {
+          id: ranking.player_id,
+          name: profile.full_name ?? 'Unnamed player',
+          rankPosition: ranking.rank_position,
+          wins: ranking.wins ?? 0,
+          losses: ranking.losses ?? 0,
+        };
+      })
+      .filter((player): player is RankedPlayer => player !== null);
     const nextCurrentPlayer = rankedPlayers.find(
       (player) => player.id === userId,
     );

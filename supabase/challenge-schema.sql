@@ -478,12 +478,6 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
-create policy "Admins can delete profiles"
-on public.profiles
-for delete
-to authenticated
-using (public.is_admin());
-
 create policy "Authenticated users can read ladder rankings"
 on public.ladder_rankings
 for select

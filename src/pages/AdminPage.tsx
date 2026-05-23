@@ -80,9 +80,7 @@ type PlayerAdminRow = {
   statusKey: PlayerStatusKey;
 };
 
-type ProfileConfirmAction =
-  | { type: 'deactivate'; profile: Profile }
-  | { type: 'delete'; profile: Profile };
+type ProfileConfirmAction = { type: 'deactivate'; profile: Profile };
 
 function AdminPage() {
   const navigate = useNavigate();
@@ -513,59 +511,19 @@ function AdminPage() {
     setProfileConfirmAction({ type: 'deactivate', profile });
   }
 
-  function requestDeleteProfile(profile: Profile) {
-    setProfileConfirmAction({ type: 'delete', profile });
-  }
-
   async function confirmProfileManagementAction() {
     if (!profileConfirmAction) {
       return;
     }
 
-    const { profile, type } = profileConfirmAction;
-    const actionKey = `${type}-${profile.id}`;
+    const { profile } = profileConfirmAction;
+    const actionKey = `deactivate-${profile.id}`;
 
     setActionId(actionKey);
     setMessage('');
     setErrorMessage('');
 
-    if (type === 'deactivate') {
-      const { error } = await supabase.rpc('admin_deactivate_player', {
-        target_profile_id: profile.id,
-      });
-
-      setActionId(null);
-      setProfileConfirmAction(null);
-
-      if (error) {
-        setErrorMessage(error.message);
-        return;
-      }
-
-      setMessage('Player deactivated and removed from the ladder.');
-      await loadAdminData();
-      return;
-    }
-
-    const hasMatchHistory = matches.some(
-      (match) =>
-        match.challenger_id === profile.id ||
-        match.opponent_id === profile.id ||
-        match.winner_id === profile.id ||
-        match.canceled_by === profile.id ||
-        match.proposed_by_player_id === profile.id,
-    );
-
-    if (hasMatchHistory) {
-      setActionId(null);
-      setProfileConfirmAction(null);
-      setErrorMessage(
-        'This player has match history. Remove from ladder instead, or archive their profile.',
-      );
-      return;
-    }
-
-    const { error } = await supabase.rpc('admin_delete_player_profile', {
+    const { error } = await supabase.rpc('admin_deactivate_player', {
       target_profile_id: profile.id,
     });
 
@@ -573,22 +531,11 @@ function AdminPage() {
     setProfileConfirmAction(null);
 
     if (error) {
-      const details = [error.message, error.details, error.hint, error.code]
-        .filter(Boolean)
-        .join('\n');
-
-      if (error.message.includes('match history') || error.code === '23503') {
-        setErrorMessage(
-          'This player has match history. Remove from ladder instead, or archive their profile.',
-        );
-        return;
-      }
-
-      setErrorMessage(details || 'Unable to delete player profile.');
+      setErrorMessage(error.message);
       return;
     }
 
-    setMessage('Player profile deleted. Supabase Auth account was not removed.');
+    setMessage('Player deactivated and removed from the ladder.');
     await loadAdminData();
   }
 
@@ -1070,15 +1017,7 @@ function AdminPage() {
                                   actionId === `deactivate-${profile.id}`
                                 }
                               >
-                                Deactivate
-                              </button>
-                              <button
-                                className="admin-danger-button"
-                                type="button"
-                                onClick={() => requestDeleteProfile(profile)}
-                                disabled={actionId === `delete-${profile.id}`}
-                              >
-                                Delete Profile
+                                Deactivate Player
                               </button>
                               <button
                                 className="admin-secondary-button"
@@ -1511,12 +1450,10 @@ function ProfileActionModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const isDelete = action.type === 'delete';
-  const title = isDelete ? 'Delete Profile' : 'Deactivate Player';
-  const confirmLabel = isDelete ? 'Delete Profile' : 'Deactivate Player';
-  const body = isDelete
-    ? 'This will remove the player profile and related ladder entry. Are you sure?'
-    : 'This will mark the player inactive and remove their ladder entry. Match history will stay in place.';
+  const title = 'Deactivate Player';
+  const confirmLabel = 'Deactivate Player';
+  const body =
+    'This will mark the player inactive and remove their ladder entry. Their profile, login account, and match history will stay in place.';
 
   return (
     <div
@@ -1553,12 +1490,6 @@ function ProfileActionModal({
           </p>
         </div>
         <p className="mt-4 text-sm leading-6 text-ink-700">{body}</p>
-        {isDelete && (
-          <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-            Prefer Deactivate Player when the member has match history. Permanent delete does
-            not remove their Supabase Auth account.
-          </p>
-        )}
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             className="admin-secondary-button"
@@ -1569,7 +1500,7 @@ function ProfileActionModal({
             Keep Player
           </button>
           <button
-            className={isDelete ? 'admin-danger-solid-button' : 'admin-primary-button'}
+            className="admin-primary-button"
             type="button"
             onClick={onConfirm}
             disabled={isSaving}
