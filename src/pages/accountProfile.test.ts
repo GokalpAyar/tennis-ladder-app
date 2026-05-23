@@ -54,7 +54,7 @@ function createProfileClient({
         }),
       }),
     }),
-  } as Parameters<typeof ensureProfile>[1];
+  } as any;
 
   return { calls, client };
 }

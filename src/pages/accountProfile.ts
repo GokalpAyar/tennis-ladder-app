@@ -16,33 +16,9 @@ export type ProfileResult = {
   } | null;
 };
 
-type SupabaseProfileClient = {
-  from: (table: string) => {
-    select: (columns: string) => {
-      eq: (
-        column: string,
-        value: string,
-      ) => {
-        maybeSingle: () => Promise<{
-          data: unknown | null;
-          error: ProfileResult['error'];
-        }>;
-      };
-    };
-    insert: (row: Record<string, unknown>) => {
-      select: (columns: string) => {
-        maybeSingle: () => Promise<{
-          data: unknown | null;
-          error: ProfileResult['error'];
-        }>;
-      };
-    };
-  };
-};
-
 export async function ensureProfile(
   user: User,
-  client: SupabaseProfileClient,
+  client: any,
 ): Promise<ProfileResult> {
   const profileResult = await client
     .from('profiles')
@@ -52,7 +28,7 @@ export async function ensureProfile(
 
   if (profileResult.error || profileResult.data) {
     return {
-      data: profileResult.data ? toProfile(profileResult.data) : null,
+      data: profileResult.data ? toProfile(profileResult.data as Profile) : null,
       error: profileResult.error,
     };
   }
@@ -79,7 +55,7 @@ export async function ensureProfile(
   }
 
   return {
-    data: createResult.data ? toProfile(createResult.data) : null,
+    data: createResult.data ? toProfile(createResult.data as Profile) : null,
     error: createResult.error,
   };
 }

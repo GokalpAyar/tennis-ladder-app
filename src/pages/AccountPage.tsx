@@ -9,6 +9,8 @@ import {
   type Profile,
 } from './accountProfile';
 
+const accountSupabase = supabase as any;
+
 type Ranking = {
   losses: number | null;
   rank_position: number | null;
@@ -47,10 +49,10 @@ function AccountPage() {
       setIsLoading(true);
       setErrorMessage('');
 
-      const profileResult = await ensureProfile(session.user, supabase);
+      const profileResult = await ensureProfile(session.user, accountSupabase);
 
       const [rankingResult] = await Promise.all([
-        supabase
+        accountSupabase
           .from('ladder_rankings')
           .select('rank_position, wins, losses')
           .eq('player_id', session.user.id)
@@ -72,7 +74,7 @@ function AccountPage() {
       if (rankingResult.error) {
         console.error('Account ranking load error:', rankingResult.error);
       } else {
-        setRanking(rankingResult.data);
+        setRanking((rankingResult.data ?? null) as Ranking | null);
       }
 
       setIsLoading(false);
@@ -105,7 +107,7 @@ function AccountPage() {
     setErrorMessage('');
     setProfileMessage('');
 
-    const ensuredProfile = await ensureProfile(currentUser, supabase);
+    const ensuredProfile = await ensureProfile(currentUser, accountSupabase);
 
     if (ensuredProfile.error) {
       setIsSavingProfile(false);
@@ -114,7 +116,7 @@ function AccountPage() {
       return;
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await accountSupabase
       .rpc('update_my_profile_full_name', { new_full_name: trimmedName })
       .maybeSingle();
 
