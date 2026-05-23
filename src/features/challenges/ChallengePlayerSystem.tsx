@@ -2,6 +2,19 @@ import { memo, useEffect, useMemo, useRef, useState, type FormEvent, type ReactN
 import type { PostgrestError } from '@supabase/supabase-js';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import {
+  MATCH_TIME_SLOTS,
+  buildRankedPlayers,
+  buildTimeProposals,
+  getDefaultTimeProposalDrafts,
+  getEligibleChallengePlayerIds,
+  getWinnerSubmissionUpdate,
+  isBlockingMatchStatus,
+  type MatchStatus,
+  type MatchTimeProposal,
+  type RankedPlayer,
+  type TimeProposalDraft,
+} from './challengeRules';
 
 type Profile = {
   id: string;
@@ -9,29 +22,10 @@ type Profile = {
   status: 'pending' | 'approved' | 'rejected' | 'inactive' | null;
 };
 
-type RankedPlayer = {
-  id: string;
-  name: string;
-  rankPosition: number;
-  wins: number;
-  losses: number;
-};
-
 type PyramidSpot = {
   rankPosition: number;
   player: RankedPlayer | null;
 };
-
-type MatchStatus =
-  | 'pending'
-  | 'accepted'
-  | 'time_proposed'
-  | 'declined'
-  | 'scheduled'
-  | 'completed'
-  | 'canceled'
-  | 'disputed'
-  | 'expired';
 
 type Match = {
   id: string;
@@ -63,20 +57,6 @@ type WinnerDraft = {
   winnerId: string;
 };
 
-type MatchTimeProposal = {
-  id: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  startAt: string;
-  endAt: string;
-};
-
-type TimeProposalDraft = {
-  date: string;
-  slotId: string;
-};
-
 type ChallengePlayerSystemProps = {
   userId: string;
   adminPreview?: boolean;
@@ -84,17 +64,6 @@ type ChallengePlayerSystemProps = {
 };
 
 const TOTAL_LADDER_POSITIONS = 50;
-const MAX_TIME_PROPOSALS = 3;
-const MATCH_TIME_SLOTS = [
-  { id: '08:00', label: '8:00 AM - 9:30 AM', startTime: '08:00', endTime: '09:30' },
-  { id: '09:30', label: '9:30 AM - 11:00 AM', startTime: '09:30', endTime: '11:00' },
-  { id: '11:00', label: '11:00 AM - 12:30 PM', startTime: '11:00', endTime: '12:30' },
-  { id: '12:30', label: '12:30 PM - 2:00 PM', startTime: '12:30', endTime: '14:00' },
-  { id: '14:00', label: '2:00 PM - 3:30 PM', startTime: '14:00', endTime: '15:30' },
-  { id: '15:30', label: '3:30 PM - 5:00 PM', startTime: '15:30', endTime: '17:00' },
-  { id: '17:00', label: '5:00 PM - 6:30 PM', startTime: '17:00', endTime: '18:30' },
-  { id: '18:30', label: '6:30 PM - 8:00 PM', startTime: '18:30', endTime: '20:00' },
-];
 const CANCELABLE_MATCH_STATUSES: MatchStatus[] = [
   'pending',
   'accepted',
@@ -169,13 +138,7 @@ function ChallengePlayerSystem({
   }, [activeMatches, isDashboard, matches]);
 
   const blockingMatches = useMemo(() => {
-    return matches.filter(
-      (match) =>
-        match.status === 'pending' ||
-        match.status === 'accepted' ||
-        match.status === 'time_proposed' ||
-        match.status === 'scheduled',
-    );
+    return matches.filter((match) => isBlockingMatchStatus(match.status));
   }, [matches]);
   const hasActiveMatch = blockingMatches.length > 0;
   const hasMatchActionNeeded = useMemo(() => {
@@ -207,21 +170,7 @@ function ChallengePlayerSystem({
   }, [currentPlayer, dashboardMatch, playersById]);
 
   const eligiblePlayerIds = useMemo(() => {
-    if (!currentPlayer || currentPlayer.rankPosition === 1) {
-      return new Set<string>();
-    }
-
-    const highestChallengeRank = Math.max(1, currentPlayer.rankPosition - 3);
-
-    return new Set(
-      players
-        .filter(
-          (player) =>
-            player.rankPosition < currentPlayer.rankPosition &&
-            player.rankPosition >= highestChallengeRank,
-        )
-        .map((player) => player.id),
-    );
+    return getEligibleChallengePlayerIds(currentPlayer, players);
   }, [currentPlayer, players]);
 
   const eligiblePlayers = useMemo(() => {
@@ -262,23 +211,7 @@ function ChallengePlayerSystem({
     );
     const currentProfile = profilesById.get(userId);
     setProfileStatus(currentProfile?.status === 'approved' ? 'approved' : 'pending');
-    const rankedPlayers = (rankingRows ?? [])
-      .map((ranking) => {
-        const profile = profilesById.get(ranking.player_id);
-
-        if (profile?.status !== 'approved') {
-          return null;
-        }
-
-        return {
-          id: ranking.player_id,
-          name: profile.full_name ?? 'Unnamed player',
-          rankPosition: ranking.rank_position,
-          wins: ranking.wins ?? 0,
-          losses: ranking.losses ?? 0,
-        };
-      })
-      .filter((player): player is RankedPlayer => player !== null);
+    const rankedPlayers = buildRankedPlayers(rankingRows ?? [], profileRows ?? []);
     const nextCurrentPlayer = rankedPlayers.find(
       (player) => player.id === userId,
     );
@@ -641,11 +574,7 @@ function ChallengePlayerSystem({
 
     const { data, error } = await supabase
       .from('matches')
-      .update({
-        winner_id: winnerDraft.winnerId,
-        score: null,
-        status: 'completed',
-      })
+      .update(getWinnerSubmissionUpdate(winnerDraft.winnerId))
       .eq('id', match.id)
       .select('id, winner_id, status, stats_recorded, ranking_updated')
       .maybeSingle();
@@ -3279,102 +3208,6 @@ function getPyramidRows(players: RankedPlayer[]) {
   }
 
   return rows;
-}
-
-function getDefaultTimeProposalDrafts(): TimeProposalDraft[] {
-  return Array.from({ length: MAX_TIME_PROPOSALS }, () => ({
-    date: '',
-    slotId: '',
-  }));
-}
-
-function buildTimeProposals(
-  drafts: TimeProposalDraft[],
-):
-  | { ok: true; proposals: MatchTimeProposal[] }
-  | { ok: false; message: string } {
-  const proposals: MatchTimeProposal[] = [];
-  const usedSlots = new Set<string>();
-
-  for (let index = 0; index < drafts.length; index += 1) {
-    const draft = drafts[index];
-    const hasAnyValue = draft.date || draft.slotId;
-
-    if (!hasAnyValue) {
-      continue;
-    }
-
-    if (!draft.date || !draft.slotId) {
-      return {
-        ok: false,
-        message: `Option ${index + 1}: please select both a date and a time slot.`,
-      };
-    }
-
-    const slot = MATCH_TIME_SLOTS.find((timeSlot) => timeSlot.id === draft.slotId);
-
-    if (!slot) {
-      return {
-        ok: false,
-        message: `Option ${index + 1}: please select an available club time slot.`,
-      };
-    }
-
-    const start = new Date(`${draft.date}T${slot.startTime}`);
-    const end = new Date(`${draft.date}T${slot.endTime}`);
-    const proposalKey = `${draft.date}-${slot.id}`;
-
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return {
-        ok: false,
-        message: `Option ${index + 1}: enter a valid date and time.`,
-      };
-    }
-
-    const durationMinutes = (end.getTime() - start.getTime()) / 60_000;
-    const now = new Date();
-
-    if (durationMinutes !== 90) {
-      return {
-        ok: false,
-        message: `Option ${index + 1}: match slots must be exactly 1 hour 30 minutes.`,
-      };
-    }
-
-    if (start.getTime() <= now.getTime()) {
-      return {
-        ok: false,
-        message: `Option ${index + 1}: please select a future date and time.`,
-      };
-    }
-
-    if (usedSlots.has(proposalKey)) {
-      return {
-        ok: false,
-        message: `Option ${index + 1}: this date and time slot is already selected.`,
-      };
-    }
-
-    usedSlots.add(proposalKey);
-
-    proposals.push({
-      id: proposalKey,
-      date: draft.date,
-      startTime: slot.startTime,
-      endTime: slot.endTime,
-      startAt: start.toISOString(),
-      endAt: end.toISOString(),
-    });
-  }
-
-  if (proposals.length === 0) {
-    return {
-      ok: false,
-      message: 'Add at least one match time option before sending.',
-    };
-  }
-
-  return { ok: true, proposals };
 }
 
 function getTodayInputDate() {

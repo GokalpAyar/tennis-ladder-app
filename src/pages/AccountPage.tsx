@@ -1,29 +1,18 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import type { User } from '@supabase/supabase-js';
 import AppLayout from '../app/AppLayout';
 import { useAuth } from '../app/AuthProvider';
 import { supabase } from '../lib/supabase';
-
-type Profile = {
-  email: string | null;
-  full_name: string | null;
-  status: string | null;
-};
+import {
+  ensureProfile,
+  formatSupabaseError,
+  toProfile,
+  type Profile,
+} from './accountProfile';
 
 type Ranking = {
   losses: number | null;
   rank_position: number | null;
   wins: number | null;
-};
-
-type ProfileResult = {
-  data: Profile | null;
-  error: {
-    code?: string;
-    details?: string;
-    hint?: string;
-    message?: string;
-  } | null;
 };
 
 function AccountPage() {
@@ -58,7 +47,7 @@ function AccountPage() {
       setIsLoading(true);
       setErrorMessage('');
 
-      const profileResult = await ensureProfile(session.user);
+      const profileResult = await ensureProfile(session.user, supabase);
 
       const [rankingResult] = await Promise.all([
         supabase
@@ -116,7 +105,7 @@ function AccountPage() {
     setErrorMessage('');
     setProfileMessage('');
 
-    const ensuredProfile = await ensureProfile(currentUser);
+    const ensuredProfile = await ensureProfile(currentUser, supabase);
 
     if (ensuredProfile.error) {
       setIsSavingProfile(false);
@@ -355,57 +344,6 @@ function AccountPage() {
   );
 }
 
-async function ensureProfile(user: User): Promise<ProfileResult> {
-  const profileResult = await supabase
-    .from('profiles')
-    .select('full_name, email, status')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (profileResult.error || profileResult.data) {
-    return {
-      data: profileResult.data ? toProfile(profileResult.data) : null,
-      error: profileResult.error,
-    };
-  }
-
-  const fallbackName =
-    typeof user.user_metadata.full_name === 'string' && user.user_metadata.full_name.trim()
-      ? user.user_metadata.full_name.trim()
-      : user.email ?? '';
-
-  const createResult = await supabase
-    .from('profiles')
-    .insert({
-      email: user.email ?? null,
-      full_name: fallbackName,
-      id: user.id,
-      role: 'player',
-      status: 'pending',
-    })
-    .select('full_name, email, status')
-    .maybeSingle();
-
-  if (createResult.error) {
-    console.error('Account profile creation error:', createResult.error);
-  }
-
-  return {
-    data: createResult.data ? toProfile(createResult.data) : null,
-    error: createResult.error,
-  };
-}
-
-function toProfile(row: unknown): Profile {
-  const profileRow = row as Partial<Profile>;
-
-  return {
-    email: profileRow.email ?? null,
-    full_name: profileRow.full_name ?? null,
-    status: profileRow.status ?? null,
-  };
-}
-
 function AccountStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-line-200 bg-white px-4 py-3 shadow-sm">
@@ -415,17 +353,6 @@ function AccountStat({ label, value }: { label: string; value: string }) {
       <dd className="mt-1 text-base font-black text-ink-900">{value}</dd>
     </div>
   );
-}
-
-function formatSupabaseError(error: {
-  code?: string;
-  details?: string;
-  hint?: string;
-  message?: string;
-}) {
-  return [error.message, error.details, error.hint, error.code]
-    .filter(Boolean)
-    .join(' ');
 }
 
 export default AccountPage;

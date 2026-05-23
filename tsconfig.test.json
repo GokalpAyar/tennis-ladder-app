@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": false,
+    "outDir": "test-dist",
+    "rootDir": "src",
+    "types": []
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "src/test-node.d.ts",
+    "src/features/challenges/challengeRules.ts",
+    "src/pages/accountProfile.ts"
+  ]
+}
