@@ -3051,7 +3051,11 @@ function PyramidLadder({
   const rows = getPyramidRows(players);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const initialMobileCenterRef = useRef<string | null>(null);
+  const pinchZoomRef = useRef<{ distance: number; zoom: number } | null>(null);
   const [zoom, setZoom] = useState(1);
+  const minZoom = 0.5;
+  const maxZoom = 1.45;
+  const zoomStep = 0.1;
   const cardWidth = `${10 * zoom}rem`;
   const cardMinHeight = `${10.5 * zoom}rem`;
   const rowGap = `${1.25 * zoom}rem`;
@@ -3084,16 +3088,76 @@ function PyramidLadder({
     return () => window.cancelAnimationFrame(frameId);
   }, [currentPlayer?.id, players.length]);
 
+  function clampZoom(nextZoom: number) {
+    return Math.min(maxZoom, Math.max(minZoom, Number(nextZoom.toFixed(2))));
+  }
+
+  function getContainerCenterPoint() {
+    const container = scrollContainerRef.current;
+
+    if (!container) {
+      return null;
+    }
+
+    const rect = container.getBoundingClientRect();
+
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+  }
+
+  function setZoomAroundPoint(nextZoom: number, anchorClientX?: number, anchorClientY?: number) {
+    const container = scrollContainerRef.current;
+
+    setZoom((current) => {
+      const clampedZoom = clampZoom(nextZoom);
+
+      if (!container || clampedZoom === current) {
+        return clampedZoom;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const anchorOffsetX =
+        typeof anchorClientX === 'number' ? anchorClientX - rect.left : rect.width / 2;
+      const anchorOffsetY =
+        typeof anchorClientY === 'number' ? anchorClientY - rect.top : rect.height / 2;
+      const anchorScrollX = container.scrollLeft + anchorOffsetX;
+      const anchorScrollY = container.scrollTop + anchorOffsetY;
+      const zoomRatio = clampedZoom / current;
+
+      window.requestAnimationFrame(() => {
+        container.scrollTo({
+          left: Math.max(0, anchorScrollX * zoomRatio - anchorOffsetX),
+          top: Math.max(0, anchorScrollY * zoomRatio - anchorOffsetY),
+          behavior: 'auto',
+        });
+      });
+
+      return clampedZoom;
+    });
+  }
+
+  function adjustZoom(delta: number) {
+    const centerPoint = getContainerCenterPoint();
+    setZoomAroundPoint(
+      zoom + delta,
+      centerPoint?.x,
+      centerPoint?.y,
+    );
+  }
+
   function zoomIn() {
-    setZoom((current) => Math.min(1.45, Number((current + 0.1).toFixed(2))));
+    adjustZoom(zoomStep);
   }
 
   function zoomOut() {
-    setZoom((current) => Math.max(0.8, Number((current - 0.1).toFixed(2))));
+    adjustZoom(-zoomStep);
   }
 
   function resetZoom() {
-    setZoom(1);
+    const centerPoint = getContainerCenterPoint();
+    setZoomAroundPoint(1, centerPoint?.x, centerPoint?.y);
   }
 
   function centerPyramidView(behavior: ScrollBehavior = 'smooth') {
@@ -3129,6 +3193,122 @@ function PyramidLadder({
 
   function centerOnMyPosition() {
     centerPyramidView('smooth');
+  }
+
+  function getTouchDistance(touches: TouchList) {
+    const firstTouch = touches.item(0);
+    const secondTouch = touches.item(1);
+
+    if (!firstTouch || !secondTouch) {
+      return 0;
+    }
+
+    return Math.hypot(
+      secondTouch.clientX - firstTouch.clientX,
+      secondTouch.clientY - firstTouch.clientY,
+    );
+  }
+
+  function getTouchCenter(touches: TouchList) {
+    const firstTouch = touches.item(0);
+    const secondTouch = touches.item(1);
+
+    if (!firstTouch || !secondTouch) {
+      return null;
+    }
+
+    return {
+      x: (firstTouch.clientX + secondTouch.clientX) / 2,
+      y: (firstTouch.clientY + secondTouch.clientY) / 2,
+    };
+  }
+
+  function handlePyramidWheel(event: {
+    ctrlKey: boolean;
+    metaKey: boolean;
+    deltaY: number;
+    clientX: number;
+    clientY: number;
+    preventDefault: () => void;
+  }) {
+    if (!event.ctrlKey && !event.metaKey) {
+      return;
+    }
+
+    event.preventDefault();
+
+    setZoom((current) => {
+      const nextZoom = clampZoom(current * (event.deltaY < 0 ? 1.08 : 0.92));
+      const container = scrollContainerRef.current;
+
+      if (!container || nextZoom === current) {
+        return nextZoom;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const anchorOffsetX = event.clientX - rect.left;
+      const anchorOffsetY = event.clientY - rect.top;
+      const anchorScrollX = container.scrollLeft + anchorOffsetX;
+      const anchorScrollY = container.scrollTop + anchorOffsetY;
+      const zoomRatio = nextZoom / current;
+
+      window.requestAnimationFrame(() => {
+        container.scrollTo({
+          left: Math.max(0, anchorScrollX * zoomRatio - anchorOffsetX),
+          top: Math.max(0, anchorScrollY * zoomRatio - anchorOffsetY),
+          behavior: 'auto',
+        });
+      });
+
+      return nextZoom;
+    });
+  }
+
+  function handlePyramidTouchStart(event: { touches: TouchList }) {
+    if (event.touches.length !== 2) {
+      pinchZoomRef.current = null;
+      return;
+    }
+
+    pinchZoomRef.current = {
+      distance: getTouchDistance(event.touches),
+      zoom,
+    };
+  }
+
+  function handlePyramidTouchMove(event: {
+    touches: TouchList;
+    preventDefault: () => void;
+  }) {
+    if (event.touches.length !== 2 || !pinchZoomRef.current) {
+      return;
+    }
+
+    const startDistance = pinchZoomRef.current.distance;
+
+    if (startDistance <= 0) {
+      return;
+    }
+
+    const currentDistance = getTouchDistance(event.touches);
+    const touchCenter = getTouchCenter(event.touches);
+
+    if (!touchCenter) {
+      return;
+    }
+
+    event.preventDefault();
+    setZoomAroundPoint(
+      pinchZoomRef.current.zoom * (currentDistance / startDistance),
+      touchCenter.x,
+      touchCenter.y,
+    );
+  }
+
+  function handlePyramidTouchEnd(event: { touches: TouchList }) {
+    if (event.touches.length < 2) {
+      pinchZoomRef.current = null;
+    }
   }
 
   return (
@@ -3182,7 +3362,13 @@ function PyramidLadder({
       </div>
       <div
         className="h-[70svh] overflow-auto overscroll-contain rounded-[1.6rem] border border-line-200 bg-white/70 px-3 py-5 shadow-inner scroll-smooth [-webkit-overflow-scrolling:touch] sm:px-5 sm:py-6 lg:px-6"
+        onTouchCancel={handlePyramidTouchEnd}
+        onTouchEnd={handlePyramidTouchEnd}
+        onTouchMove={handlePyramidTouchMove}
+        onTouchStart={handlePyramidTouchStart}
+        onWheel={handlePyramidWheel}
         ref={scrollContainerRef}
+        style={{ touchAction: 'pan-x pan-y' }}
       >
         <div
           className="mx-auto flex w-max min-w-full flex-col items-center px-2 pb-8"
