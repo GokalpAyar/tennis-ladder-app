@@ -202,18 +202,19 @@ function AdminPage() {
       return;
     }
 
+    if (isRankOccupied(rankings, rankPosition)) {
+      setErrorMessage(`Rank ${rankPosition} is already occupied. Choose an empty rank.`);
+      return;
+    }
+
     setActionId(`approve-${profileId}`);
     setMessage('');
     setErrorMessage('');
 
-    const rpcPayload = {
+    const { error } = await supabase.rpc('admin_approve_player_with_rank', {
       target_profile_id: profileId,
       target_rank_position: rankPosition,
-    };
-
-    console.log('admin_approve_player_with_rank payload', rpcPayload);
-
-    const { error } = await supabase.rpc('admin_approve_player_with_rank', rpcPayload);
+    });
 
     setActionId(null);
 
@@ -316,21 +317,22 @@ function AdminPage() {
       return;
     }
 
+    if (isRankOccupied(rankings, draft.rank_position, ranking.player_id)) {
+      setErrorMessage(`Rank ${draft.rank_position} is already occupied. Choose an empty rank.`);
+      return;
+    }
+
     setActionId(`ranking-${rankingKey}`);
     setMessage('');
     setErrorMessage('');
 
-    const rpcPayload = {
+    const { error } = await supabase.rpc('admin_update_player_ladder_row', {
       target_full_name: fullName ?? profile?.full_name ?? null,
       target_losses: draft.losses,
       target_player_id: ranking.player_id,
       target_rank_position: draft.rank_position,
       target_wins: draft.wins,
-    };
-
-    console.log('admin_update_player_ladder_row payload', rpcPayload);
-
-    const { error } = await supabase.rpc('admin_update_player_ladder_row', rpcPayload);
+    });
 
     setActionId(null);
 
@@ -549,41 +551,54 @@ function AdminPage() {
                   {pendingProfiles.length === 0 ? (
                     <AdminEmptyState message="No pending players." />
                   ) : (
-                    pendingProfiles.map((profile) => (
-                      <article
-                        className="grid gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 lg:grid-cols-[minmax(0,1fr)_8rem_auto_auto] lg:items-end"
-                        key={profile.id}
-                      >
-                        <PlayerIdentity profile={profile} />
-                        <NumberInput
-                          label="Rank"
-                          min={1}
-                          value={approvalRankDrafts[profile.id] ?? rankings.length + 1}
-                          onChange={(value) =>
-                            setApprovalRankDrafts((current) => ({
-                              ...current,
-                              [profile.id]: value,
-                            }))
-                          }
-                        />
-                        <button
-                          className="admin-primary-button"
-                          type="button"
-                          onClick={() => approvePlayer(profile.id)}
-                          disabled={actionId === `approve-${profile.id}`}
+                    pendingProfiles.map((profile) => {
+                      const approvalRank =
+                        approvalRankDrafts[profile.id] ?? rankings.length + 1;
+                      const rankTaken = isRankOccupied(rankings, approvalRank);
+
+                      return (
+                        <article
+                          className="grid gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 lg:grid-cols-[minmax(0,1fr)_8rem_auto_auto] lg:items-end"
+                          key={profile.id}
                         >
-                          {actionId === `approve-${profile.id}` ? 'Approving...' : 'Approve'}
-                        </button>
-                        <button
-                          className="admin-danger-button"
-                          type="button"
-                          onClick={() => rejectPlayer(profile.id)}
-                          disabled={actionId === `reject-${profile.id}`}
-                        >
-                          {actionId === `reject-${profile.id}` ? 'Rejecting...' : 'Reject'}
-                        </button>
-                      </article>
-                    ))
+                          <PlayerIdentity profile={profile} />
+                          <div>
+                            <NumberInput
+                              label="Rank"
+                              min={1}
+                              value={approvalRank}
+                              onChange={(value) =>
+                                setApprovalRankDrafts((current) => ({
+                                  ...current,
+                                  [profile.id]: value,
+                                }))
+                              }
+                            />
+                            {rankTaken && (
+                              <p className="mt-1 text-xs font-bold text-red-700">
+                                Rank occupied
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            className="admin-primary-button"
+                            type="button"
+                            onClick={() => approvePlayer(profile.id)}
+                            disabled={actionId === `approve-${profile.id}`}
+                          >
+                            {actionId === `approve-${profile.id}` ? 'Approving...' : 'Approve'}
+                          </button>
+                          <button
+                            className="admin-danger-button"
+                            type="button"
+                            onClick={() => rejectPlayer(profile.id)}
+                            disabled={actionId === `reject-${profile.id}`}
+                          >
+                            {actionId === `reject-${profile.id}` ? 'Rejecting...' : 'Reject'}
+                          </button>
+                        </article>
+                      );
+                    })
                   )}
                 </div>
               </AdminPanel>
@@ -614,7 +629,7 @@ function AdminPage() {
                         };
                         const rankTaken = rankings.some(
                           (other) =>
-                            other.id !== ranking.id &&
+                            other.player_id !== ranking.player_id &&
                             other.rank_position === draft.rank_position,
                         );
 
@@ -634,7 +649,7 @@ function AdminPage() {
                               />
                               {rankTaken && (
                                 <p className="mt-1 text-xs font-bold text-red-700">
-                                  Rank taken
+                                  Rank occupied
                                 </p>
                               )}
                             </div>
@@ -1063,6 +1078,18 @@ function getProfileName(profile: Profile | undefined) {
 
 function getRankingKey(ranking: LadderRanking) {
   return String(ranking.id);
+}
+
+function isRankOccupied(
+  rankings: LadderRanking[],
+  rankPosition: number,
+  excludedPlayerId?: string,
+) {
+  return rankings.some(
+    (ranking) =>
+      ranking.rank_position === rankPosition &&
+      ranking.player_id !== excludedPlayerId,
+  );
 }
 
 function getStatusLabel(status: MatchStatus) {

@@ -362,54 +362,20 @@ $$;
 
 grant execute on function public.update_my_profile_full_name(text) to authenticated;
 
-create or replace function public.normalize_ladder_rankings()
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  max_rank integer;
-  ranking_count integer;
-  temp_offset integer;
+drop function if exists public.normalize_ladder_rankings();
+
+do $$
 begin
-  select coalesce(max(rank_position), 0), count(*)
-  into max_rank, ranking_count
-  from public.ladder_rankings;
-
-  if ranking_count = 0 then
-    return;
-  end if;
-
-  temp_offset := greatest(10000, max_rank + ranking_count + 10000);
-
-  update public.ladder_rankings
-  set rank_position = coalesce(rank_position, 0) + temp_offset
-  where true;
-
-  with normalized as (
-    select
-      id,
-      row_number() over (
-        order by rank_position asc, created_at asc nulls last, id asc
-      ) as normalized_rank
+  if not exists (
+    select 1
     from public.ladder_rankings
-  )
-  update public.ladder_rankings as ranking
-  set rank_position = normalized.normalized_rank
-  from normalized
-  where ranking.id = normalized.id;
+    group by rank_position
+    having count(*) > 1
+  ) then
+    execute 'create unique index if not exists ladder_rankings_rank_position_key on public.ladder_rankings (rank_position)';
+  end if;
 end;
 $$;
-
-select public.normalize_ladder_rankings();
-
-revoke all on function public.normalize_ladder_rankings() from public;
-revoke all on function public.normalize_ladder_rankings() from anon;
-revoke all on function public.normalize_ladder_rankings() from authenticated;
-
-create unique index if not exists ladder_rankings_rank_position_key
-on public.ladder_rankings (rank_position);
 
 create or replace function public.admin_approve_player_with_rank(
   target_profile_id uuid,
@@ -420,10 +386,6 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  max_rank integer;
-  safe_rank integer;
-  temp_offset integer;
 begin
   if not public.is_admin(auth.uid()) then
     raise exception 'Admin access required.';
@@ -447,25 +409,16 @@ begin
     raise exception 'Player is already on the ladder.';
   end if;
 
-  perform public.normalize_ladder_rankings();
-
-  select coalesce(max(rank_position), 0)
-  into max_rank
-  from public.ladder_rankings;
-
-  safe_rank := least(target_rank_position, max_rank + 1);
-  temp_offset := greatest(10000, max_rank + 10000);
-
-  update public.ladder_rankings
-  set rank_position = rank_position + temp_offset
-  where rank_position >= safe_rank;
+  if exists (
+    select 1
+    from public.ladder_rankings
+    where rank_position = target_rank_position
+  ) then
+    raise exception 'Rank % is already occupied. Choose an empty rank.', target_rank_position;
+  end if;
 
   insert into public.ladder_rankings (player_id, rank_position, wins, losses)
-  values (target_profile_id, safe_rank, 0, 0);
-
-  update public.ladder_rankings
-  set rank_position = rank_position - temp_offset + 1
-  where rank_position >= safe_rank + temp_offset;
+  values (target_profile_id, target_rank_position, 0, 0);
 
   update public.profiles
   set status = 'approved',
@@ -495,13 +448,6 @@ set search_path = public
 as $$
 declare
   current_player_id uuid;
-  current_rank integer;
-  max_rank integer;
-  safe_rank integer;
-  safe_wins integer;
-  safe_losses integer;
-  temp_rank integer;
-  temp_offset integer;
 begin
   if not public.is_admin(auth.uid()) then
     raise exception 'Admin access required.';
@@ -525,10 +471,8 @@ begin
     raise exception 'Losses must be 0 or greater.';
   end if;
 
-  perform public.normalize_ladder_rankings();
-
-  select player_id, rank_position
-  into current_player_id, current_rank
+  select player_id
+  into current_player_id
   from public.ladder_rankings
   where player_id = target_player_id;
 
@@ -536,52 +480,23 @@ begin
     raise exception 'Ladder ranking was not found.';
   end if;
 
-  select coalesce(max(rank_position), current_rank)
-  into max_rank
-  from public.ladder_rankings;
-
-  safe_rank := least(target_rank_position, max_rank);
-  safe_wins := target_wins;
-  safe_losses := target_losses;
-  temp_offset := greatest(10000, max_rank + 10000);
-  temp_rank := max_rank + temp_offset + 1;
+  if exists (
+    select 1
+    from public.ladder_rankings
+    where rank_position = target_rank_position
+      and player_id <> target_player_id
+  ) then
+    raise exception 'Rank % is already occupied. Choose an empty rank.', target_rank_position;
+  end if;
 
   update public.profiles
   set full_name = nullif(trim(target_full_name), '')
   where id = current_player_id;
 
-  if safe_rank <> current_rank then
-    update public.ladder_rankings
-    set rank_position = temp_rank
-    where player_id = target_player_id;
-
-    if safe_rank < current_rank then
-      update public.ladder_rankings
-      set rank_position = rank_position + temp_offset
-      where rank_position >= safe_rank
-        and rank_position < current_rank;
-
-      update public.ladder_rankings
-      set rank_position = rank_position - temp_offset + 1
-      where rank_position >= safe_rank + temp_offset
-        and rank_position < current_rank + temp_offset;
-    else
-      update public.ladder_rankings
-      set rank_position = rank_position + temp_offset
-      where rank_position > current_rank
-        and rank_position <= safe_rank;
-
-      update public.ladder_rankings
-      set rank_position = rank_position - temp_offset - 1
-      where rank_position > current_rank + temp_offset
-        and rank_position <= safe_rank + temp_offset;
-    end if;
-  end if;
-
   update public.ladder_rankings
-  set rank_position = safe_rank,
-      wins = safe_wins,
-      losses = safe_losses
+  set rank_position = target_rank_position,
+      wins = target_wins,
+      losses = target_losses
   where player_id = target_player_id;
 end;
 $$;
