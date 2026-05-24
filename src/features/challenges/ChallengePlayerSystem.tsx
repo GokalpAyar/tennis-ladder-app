@@ -3575,6 +3575,10 @@ function TimeProposalForm({
     await onPropose(match);
   }
 
+  function clearProposalDraft(index: number) {
+    onProposalChange(match.id, index, { date: '', slotId: '' });
+  }
+
   return (
     <form className="mt-4 rounded-2xl border border-line-200 bg-white p-4" onSubmit={handleSubmit}>
       <div>
@@ -3586,40 +3590,53 @@ function TimeProposalForm({
       <div className="mt-4 grid gap-3">
         {proposalDrafts.map((proposal, index) => (
           <div
-            className="grid gap-3 rounded-xl border border-line-200 bg-court-50/60 p-3 sm:grid-cols-[1fr_1.35fr]"
+            className="min-w-0 rounded-xl border border-line-200 bg-court-50/60 p-3"
             key={index}
           >
-            <label className="block">
-              <span className="text-xs font-bold uppercase text-ink-700">
-                Date {index + 1}
-              </span>
-              <input
-                className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
-                min={getTodayInputDate()}
-                type="date"
-                value={proposal.date}
-                onChange={(event) =>
-                  onProposalChange(match.id, index, { date: event.target.value })
-                }
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-bold uppercase text-ink-700">Time Slot</span>
-              <select
-                className="mt-1 w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
-                value={proposal.slotId}
-                onChange={(event) =>
-                  onProposalChange(match.id, index, { slotId: event.target.value })
-                }
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-xs font-black uppercase tracking-[0.12em] text-ink-700">
+                Option {index + 1}
+              </p>
+              <button
+                className="inline-flex shrink-0 items-center justify-center rounded-full border border-line-200 bg-white px-3 py-1.5 text-xs font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                onClick={() => clearProposalDraft(index)}
+                disabled={actionId === match.id || (!proposal.date && !proposal.slotId)}
               >
-                <option value="">Select a 90-minute slot</option>
-                {MATCH_TIME_SLOTS.map((slot) => (
-                  <option key={slot.id} value={slot.id}>
-                    {slot.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                Clear
+              </button>
+            </div>
+            <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+              <label className="block min-w-0">
+                <span className="text-xs font-bold uppercase text-ink-700">Date</span>
+                <input
+                  className="mt-1 block h-11 w-full min-w-0 max-w-full appearance-none rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
+                  min={getTodayInputDate()}
+                  type="date"
+                  value={proposal.date}
+                  onChange={(event) =>
+                    onProposalChange(match.id, index, { date: event.target.value })
+                  }
+                />
+              </label>
+              <label className="block min-w-0">
+                <span className="text-xs font-bold uppercase text-ink-700">Time Slot</span>
+                <select
+                  className="mt-1 block h-11 w-full min-w-0 max-w-full rounded-lg border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none focus:border-court-500 focus:ring-2 focus:ring-court-100"
+                  value={proposal.slotId}
+                  onChange={(event) =>
+                    onProposalChange(match.id, index, { slotId: event.target.value })
+                  }
+                >
+                  <option value="">Select a 90-minute slot</option>
+                  {MATCH_TIME_SLOTS.map((slot) => (
+                    <option key={slot.id} value={slot.id}>
+                      {slot.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
         ))}
       </div>
