@@ -159,15 +159,6 @@ function LoginPage() {
             Sign up
           </Link>
         </p>
-        <p className="mt-3 text-xs text-ink-700">
-          Staff access?{' '}
-          <Link
-            className="font-bold text-court-700 hover:text-court-500"
-            to="/admin-login"
-          >
-            Admin Login
-          </Link>
-        </p>
       </section>
     </main>
   );

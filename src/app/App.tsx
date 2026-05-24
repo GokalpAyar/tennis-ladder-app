@@ -3,7 +3,6 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import AccountPage from '../pages/AccountPage';
 import ActivitiesPage from '../pages/ActivitiesPage';
-import AdminLoginPage from '../pages/AdminLoginPage';
 import AdminPage from '../pages/AdminPage';
 import CourtInfoPage from '../pages/CourtInfoPage';
 import DashboardPage from '../pages/DashboardPage';
@@ -48,7 +47,7 @@ function AdminRoute({ children }: { children: ReactNode }) {
   }
 
   if (!session) {
-    return <Navigate to="/admin-login" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   if (role !== 'admin') {
@@ -80,7 +79,7 @@ function App() {
           </PublicRoute>
         }
       />
-      <Route path="/admin-login" element={<AdminLoginPage />} />
+      <Route path="/admin-login" element={<Navigate to="/login" replace />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/signup"

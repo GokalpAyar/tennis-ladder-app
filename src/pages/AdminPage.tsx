@@ -112,7 +112,7 @@ function AdminPage() {
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    navigate('/admin-login', { replace: true });
+    navigate('/login', { replace: true });
   }
 
   const profilesById = useMemo(() => {
@@ -766,12 +766,13 @@ function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f7fb] px-4 py-5 text-ink-900 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-[#f7f8fc] px-4 py-5 text-[#071a3d] sm:px-6 lg:px-8">
       <section className="mx-auto w-full max-w-[88rem] space-y-5">
-        <header className="rounded-[1.75rem] border border-slate-800 bg-slate-950 px-5 py-6 text-white shadow-lg shadow-slate-900/15 sm:px-7">
+        <header className="relative overflow-hidden rounded-[1.75rem] border border-[#102a5c] bg-[#071a3d] px-5 py-6 text-white shadow-lg shadow-slate-900/15 sm:px-7">
+          <div className="absolute inset-x-0 top-0 h-1 bg-red-600" />
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-start gap-4">
-              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-court-500 text-white shadow-sm">
+              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-red-600 text-white shadow-sm shadow-red-950/20">
                 <AdminIcon />
               </span>
               <div>
@@ -835,7 +836,7 @@ function AdminPage() {
             <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               <AdminStatCard
                 label="Pending Players"
-                tone="yellow"
+                tone="red"
                 value={pendingProfiles.length}
               />
               <AdminStatCard
@@ -860,7 +861,7 @@ function AdminPage() {
               />
             </section>
 
-            <nav className="grid gap-2 rounded-3xl border border-line-200 bg-white p-2 shadow-sm sm:grid-cols-5">
+            <nav className="grid gap-2 rounded-3xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-5">
               {([
                 ['pending', 'Pending'],
                 ['players', 'Players'],
@@ -871,8 +872,8 @@ function AdminPage() {
                 <button
                   className={`rounded-2xl px-3 py-2.5 text-sm font-black transition ${
                     activeTab === tab
-                      ? 'bg-court-900 text-white shadow-sm'
-                      : 'text-ink-700 hover:bg-slate-100 hover:text-ink-900'
+                      ? 'bg-[#071a3d] text-white shadow-sm'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-[#071a3d]'
                   }`}
                   key={tab}
                   type="button"
@@ -1240,8 +1241,8 @@ function AdminPage() {
                       <button
                         className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-black transition ${
                           matchFilter === id
-                            ? 'bg-court-900 text-white'
-                            : 'border border-line-200 bg-white text-ink-700 hover:bg-slate-100'
+                            ? 'bg-[#071a3d] text-white'
+                            : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
                         }`}
                         key={id}
                         type="button"

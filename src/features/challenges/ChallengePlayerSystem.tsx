@@ -1950,6 +1950,8 @@ function CompletedMatchesSection({
   playersById: Map<string, RankedPlayer>;
   sectionClass: string;
 }) {
+  const sortedMatches = [...matches].sort(compareCompletedMatches);
+
   return (
     <section className={sectionClass}>
       <SectionHeader
@@ -1961,13 +1963,16 @@ function CompletedMatchesSection({
         <EmptyState message="No completed matches yet." />
       ) : (
         <div className="mt-5 space-y-3">
-          {matches.map((match) => (
+          {sortedMatches.map((match, index) => (
             <article
               className="rounded-lg border border-line-200 bg-white p-5 shadow-sm"
               key={match.id}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
+                  <p className="mb-1 text-xs font-black uppercase tracking-[0.14em] text-court-700">
+                    Match {index + 1}
+                  </p>
                   <h3 className="font-bold text-ink-900">
                     {getMatchTitle(match, currentPlayer, playersById)}
                   </h3>
@@ -1983,6 +1988,14 @@ function CompletedMatchesSection({
       )}
     </section>
   );
+}
+
+function compareCompletedMatches(first: Match, second: Match) {
+  return getCompletedMatchTime(second) - getCompletedMatchTime(first);
+}
+
+function getCompletedMatchTime(match: Match) {
+  return new Date(match.proposed_match_at ?? match.created_at).getTime();
 }
 
 function CanceledMatchCard({
