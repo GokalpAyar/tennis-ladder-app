@@ -1,4 +1,13 @@
-import { memo, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+  type TouchEvent,
+} from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
@@ -3264,7 +3273,7 @@ function PyramidLadder({
     });
   }
 
-  function handlePyramidTouchStart(event: { touches: TouchList }) {
+  function handlePyramidTouchStart(event: TouchEvent<HTMLDivElement>) {
     if (event.touches.length !== 2) {
       pinchZoomRef.current = null;
       return;
@@ -3276,10 +3285,7 @@ function PyramidLadder({
     };
   }
 
-  function handlePyramidTouchMove(event: {
-    touches: TouchList;
-    preventDefault: () => void;
-  }) {
+  function handlePyramidTouchMove(event: TouchEvent<HTMLDivElement>) {
     if (event.touches.length !== 2 || !pinchZoomRef.current) {
       return;
     }
@@ -3305,7 +3311,7 @@ function PyramidLadder({
     );
   }
 
-  function handlePyramidTouchEnd(event: { touches: TouchList }) {
+  function handlePyramidTouchEnd(event: TouchEvent<HTMLDivElement>) {
     if (event.touches.length < 2) {
       pinchZoomRef.current = null;
     }
