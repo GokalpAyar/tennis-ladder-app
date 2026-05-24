@@ -3059,16 +3059,26 @@ function PyramidLadder({
 }: FullLadderSectionProps) {
   const rows = getPyramidRows(players);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const pyramidContentRef = useRef<HTMLDivElement | null>(null);
   const initialMobileCenterRef = useRef<string | null>(null);
   const pinchZoomRef = useRef<{ distance: number; zoom: number } | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [pyramidContentSize, setPyramidContentSize] = useState({ height: 0, width: 0 });
   const minZoom = 0.5;
   const maxZoom = 1.45;
   const zoomStep = 0.1;
-  const cardWidth = `${10 * zoom}rem`;
-  const cardMinHeight = `${10.5 * zoom}rem`;
-  const rowGap = `${1.25 * zoom}rem`;
-  const cardGap = `${0.75 * zoom}rem`;
+  const cardWidth = '10rem';
+  const cardMinHeight = '10.5rem';
+  const rowGap = '1.25rem';
+  const cardGap = '0.75rem';
+  const hasMeasuredPyramidContent =
+    pyramidContentSize.height > 0 && pyramidContentSize.width > 0;
+  const pyramidSizerStyle = hasMeasuredPyramidContent
+    ? {
+        height: `${pyramidContentSize.height * zoom}px`,
+        width: `${pyramidContentSize.width * zoom}px`,
+      }
+    : undefined;
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -3096,6 +3106,40 @@ function PyramidLadder({
 
     return () => window.cancelAnimationFrame(frameId);
   }, [currentPlayer?.id, players.length]);
+
+  useEffect(() => {
+    const content = pyramidContentRef.current;
+
+    if (!content) {
+      return undefined;
+    }
+
+    function updatePyramidContentSize() {
+      setPyramidContentSize((current) => {
+        const nextSize = {
+          height: content.offsetHeight,
+          width: content.offsetWidth,
+        };
+
+        if (current.height === nextSize.height && current.width === nextSize.width) {
+          return current;
+        }
+
+        return nextSize;
+      });
+    }
+
+    updatePyramidContentSize();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const resizeObserver = new ResizeObserver(updatePyramidContentSize);
+    resizeObserver.observe(content);
+
+    return () => resizeObserver.disconnect();
+  }, [players.length, showActions]);
 
   function clampZoom(nextZoom: number) {
     return Math.min(maxZoom, Math.max(minZoom, Number(nextZoom.toFixed(2))));
@@ -3377,33 +3421,47 @@ function PyramidLadder({
         style={{ touchAction: 'pan-x pan-y' }}
       >
         <div
-          className="mx-auto flex w-max min-w-full flex-col items-center px-2 pb-8"
-          style={{ gap: rowGap }}
+          className={`mx-auto ${
+            hasMeasuredPyramidContent ? 'relative' : 'flex w-max flex-col items-center'
+          }`}
+          style={pyramidSizerStyle}
         >
-          {rows.map((row, rowIndex) => (
-            <div
-              className="flex w-max justify-center"
-              style={{ gap: cardGap }}
-              key={rowIndex}
-            >
-              {row.map((spot) => (
-                <PyramidPlayerCard
-                  actionId={actionId}
-                  blockingMatch={
-                    spot.player ? getBlockingMatchWith(spot.player.id) : undefined
-                  }
-                  cardMinHeight={cardMinHeight}
-                  cardWidth={cardWidth}
-                  currentPlayer={currentPlayer}
-                  isEligible={spot.player ? eligiblePlayerIds.has(spot.player.id) : false}
-                  key={spot.rankPosition}
-                  onChallenge={onChallenge}
-                  showActions={showActions}
-                  spot={spot}
-                />
-              ))}
-            </div>
-          ))}
+          <div
+            className={`flex w-max flex-col items-center px-2 pb-8 ${
+              hasMeasuredPyramidContent ? 'absolute left-0 top-0' : ''
+            }`}
+            ref={pyramidContentRef}
+            style={{
+              gap: rowGap,
+              transform: `scale(${zoom})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            {rows.map((row, rowIndex) => (
+              <div
+                className="flex w-max justify-center"
+                style={{ gap: cardGap }}
+                key={rowIndex}
+              >
+                {row.map((spot) => (
+                  <PyramidPlayerCard
+                    actionId={actionId}
+                    blockingMatch={
+                      spot.player ? getBlockingMatchWith(spot.player.id) : undefined
+                    }
+                    cardMinHeight={cardMinHeight}
+                    cardWidth={cardWidth}
+                    currentPlayer={currentPlayer}
+                    isEligible={spot.player ? eligiblePlayerIds.has(spot.player.id) : false}
+                    key={spot.rankPosition}
+                    onChallenge={onChallenge}
+                    showActions={showActions}
+                    spot={spot}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
