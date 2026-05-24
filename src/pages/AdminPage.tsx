@@ -308,13 +308,17 @@ function AdminPage() {
     setMessage('');
     setErrorMessage('');
 
-    const { error } = await supabase.rpc('admin_update_player_ladder_row', {
+    const rpcPayload = {
       target_full_name: profile?.full_name ?? null,
       target_losses: draft.losses,
+      target_player_id: ranking.player_id,
       target_rank_position: draft.rank_position,
-      target_ranking_id: ranking.id,
       target_wins: draft.wins,
-    });
+    };
+
+    console.log('admin_update_player_ladder_row payload', rpcPayload);
+
+    const { error } = await supabase.rpc('admin_update_player_ladder_row', rpcPayload);
 
     setActionId(null);
 

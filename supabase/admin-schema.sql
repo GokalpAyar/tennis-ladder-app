@@ -421,12 +421,13 @@ begin
 end;
 $$;
 
--- Drop first so changed argument names/signatures cannot leave Supabase with
--- an older cached RPC definition.
+-- Drop first so changed argument names cannot leave Supabase with an older
+-- cached RPC definition. This RPC uses player_id because ladder_rankings.id
+-- may be numeric in existing databases.
 drop function if exists public.admin_update_player_ladder_row(uuid, text, integer, integer, integer);
 
 create or replace function public.admin_update_player_ladder_row(
-  target_ranking_id uuid,
+  target_player_id uuid,
   target_full_name text,
   target_rank_position integer,
   target_wins integer,
@@ -451,6 +452,10 @@ begin
     raise exception 'Admin access required.';
   end if;
 
+  if target_player_id is null then
+    raise exception 'Player profile is required.';
+  end if;
+
   if target_rank_position is null or target_rank_position < 1 then
     raise exception 'Rank must be 1 or greater.';
   end if;
@@ -466,7 +471,7 @@ begin
   select player_id, rank_position
   into current_player_id, current_rank
   from public.ladder_rankings
-  where id = target_ranking_id;
+  where player_id = target_player_id;
 
   if current_player_id is null then
     raise exception 'Ladder ranking was not found.';
@@ -489,7 +494,7 @@ begin
   if safe_rank <> current_rank then
     update public.ladder_rankings
     set rank_position = temp_rank
-    where id = target_ranking_id;
+    where player_id = target_player_id;
 
     if safe_rank < current_rank then
       update public.ladder_rankings
@@ -518,7 +523,7 @@ begin
   set rank_position = safe_rank,
       wins = safe_wins,
       losses = safe_losses
-  where id = target_ranking_id;
+  where player_id = target_player_id;
 end;
 $$;
 
