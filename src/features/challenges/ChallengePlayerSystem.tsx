@@ -44,6 +44,11 @@ type Match = {
   cancellation_requested_by: string | null;
   cancellation_reason: string | null;
   cancellation_requested_at: string | null;
+  reschedule_requested_by: string | null;
+  reschedule_reason: string | null;
+  reschedule_requested_at: string | null;
+  reschedule_approved_by: string | null;
+  reschedule_approved_at: string | null;
   winner_id: string | null;
   stats_recorded: boolean;
   ranking_updated: boolean;
@@ -232,7 +237,7 @@ function ChallengePlayerSystem({
     const matchSelect = supabase
       .from('matches')
       .select(
-        'id, challenger_id, opponent_id, status, proposed_match_at, proposed_match_options, scheduled_match_ends_at, proposed_by_player_id, challenger_agreed_at, opponent_agreed_at, cancel_reason, canceled_at, canceled_by, cancellation_requested_by, cancellation_reason, cancellation_requested_at, winner_id, stats_recorded, ranking_updated, created_at',
+        'id, challenger_id, opponent_id, status, proposed_match_at, proposed_match_options, scheduled_match_ends_at, proposed_by_player_id, challenger_agreed_at, opponent_agreed_at, cancel_reason, canceled_at, canceled_by, cancellation_requested_by, cancellation_reason, cancellation_requested_at, reschedule_requested_by, reschedule_reason, reschedule_requested_at, reschedule_approved_by, reschedule_approved_at, winner_id, stats_recorded, ranking_updated, created_at',
       );
 
     const { data: matchRows, error: matchesError } = await (adminPreview
@@ -318,6 +323,14 @@ function ChallengePlayerSystem({
       return;
     }
 
+    if (
+      match.status === 'scheduled' &&
+      (!match.reschedule_requested_by || !match.reschedule_approved_at)
+    ) {
+      setErrorMessage('Your opponent must accept the reschedule request before new times can be proposed.');
+      return;
+    }
+
     const proposalResult = buildTimeProposals(timeProposalDrafts[match.id] ?? []);
 
     if (!proposalResult.ok) {
@@ -331,17 +344,28 @@ function ChallengePlayerSystem({
     setMessage('');
     setErrorMessage('');
 
+    const matchUpdate = {
+      status: 'time_proposed',
+      proposed_match_at: proposalResult.proposals[0].startAt,
+      proposed_match_options: proposalResult.proposals,
+      proposed_by_player_id: userId,
+      challenger_agreed_at: isChallenger ? new Date().toISOString() : null,
+      opponent_agreed_at: isChallenger ? null : new Date().toISOString(),
+      scheduled_match_ends_at: null,
+      ...(match.status === 'scheduled'
+        ? {
+            reschedule_approved_at: null,
+            reschedule_approved_by: null,
+            reschedule_reason: null,
+            reschedule_requested_at: null,
+            reschedule_requested_by: null,
+          }
+        : {}),
+    };
+
     const { error } = await supabase
       .from('matches')
-      .update({
-        status: 'time_proposed',
-        proposed_match_at: proposalResult.proposals[0].startAt,
-        proposed_match_options: proposalResult.proposals,
-        proposed_by_player_id: userId,
-        challenger_agreed_at: isChallenger ? new Date().toISOString() : null,
-        opponent_agreed_at: isChallenger ? null : new Date().toISOString(),
-        scheduled_match_ends_at: null,
-      })
+      .update(matchUpdate)
       .eq('id', match.id);
 
     setActionId(null);
@@ -694,6 +718,150 @@ function ChallengePlayerSystem({
     await loadChallengeData();
   }
 
+  async function requestReschedule(match: Match, reason: string) {
+    if (!currentPlayer || match.status !== 'scheduled') {
+      return;
+    }
+
+    if (!isCurrentUserMatchPlayer(match, currentPlayer.id)) {
+      setErrorMessage('Only players in this match can request a new time.');
+      return;
+    }
+
+    const trimmedReason = reason.trim();
+
+    setActionId(match.id);
+    setMessage('');
+    setErrorMessage('');
+
+    const { data, error } = await supabase
+      .from('matches')
+      .update({
+        reschedule_approved_at: null,
+        reschedule_approved_by: null,
+        reschedule_reason: trimmedReason || null,
+        reschedule_requested_at: new Date().toISOString(),
+        reschedule_requested_by: currentPlayer.id,
+      })
+      .eq('id', match.id)
+      .eq('status', 'scheduled')
+      .select('id')
+      .maybeSingle();
+
+    setActionId(null);
+
+    if (error) {
+      setErrorMessage(formatSupabaseError(error));
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage('Reschedule could not be requested because this match changed.');
+      await loadChallengeData();
+      return;
+    }
+
+    setMessage('Reschedule request sent. The original match time remains scheduled.');
+    await loadChallengeData();
+  }
+
+  async function acceptRescheduleRequest(match: Match) {
+    if (!currentPlayer || match.status !== 'scheduled') {
+      return;
+    }
+
+    if (match.reschedule_requested_by === currentPlayer.id) {
+      setErrorMessage('Waiting for your opponent to respond to your reschedule request.');
+      return;
+    }
+
+    if (!match.reschedule_requested_by) {
+      setErrorMessage('No reschedule request was found for this match.');
+      return;
+    }
+
+    setActionId(match.id);
+    setMessage('');
+    setErrorMessage('');
+
+    const { data, error } = await supabase
+      .from('matches')
+      .update({
+        reschedule_approved_at: new Date().toISOString(),
+        reschedule_approved_by: currentPlayer.id,
+      })
+      .eq('id', match.id)
+      .eq('status', 'scheduled')
+      .select('id')
+      .maybeSingle();
+
+    setActionId(null);
+
+    if (error) {
+      setErrorMessage(formatSupabaseError(error));
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage('Reschedule could not be accepted because this match changed.');
+      await loadChallengeData();
+      return;
+    }
+
+    setMessage('Reschedule request accepted. New times can now be proposed.');
+    await loadChallengeData();
+  }
+
+  async function keepScheduledAfterRescheduleRequest(match: Match) {
+    if (!currentPlayer || match.status !== 'scheduled') {
+      return;
+    }
+
+    if (match.reschedule_requested_by === currentPlayer.id) {
+      setErrorMessage('Waiting for your opponent to respond to your reschedule request.');
+      return;
+    }
+
+    if (!match.reschedule_requested_by) {
+      setErrorMessage('No reschedule request was found for this match.');
+      return;
+    }
+
+    setActionId(match.id);
+    setMessage('');
+    setErrorMessage('');
+
+    const { data, error } = await supabase
+      .from('matches')
+      .update({
+        reschedule_approved_at: null,
+        reschedule_approved_by: null,
+        reschedule_reason: null,
+        reschedule_requested_at: null,
+        reschedule_requested_by: null,
+      })
+      .eq('id', match.id)
+      .eq('status', 'scheduled')
+      .select('id')
+      .maybeSingle();
+
+    setActionId(null);
+
+    if (error) {
+      setErrorMessage(formatSupabaseError(error));
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage('The match could not be kept scheduled because it changed.');
+      await loadChallengeData();
+      return;
+    }
+
+    setMessage('Match remains scheduled.');
+    await loadChallengeData();
+  }
+
   async function createMatchNotification({
     message: notificationMessage,
     title,
@@ -718,21 +886,6 @@ function ChallengePlayerSystem({
         code: error.code,
       });
     }
-  }
-
-  function requestReschedule(match: Match) {
-    if (!isCurrentUserMatchPlayer(match, userId)) {
-      setErrorMessage('Only players in this match can request new times.');
-      return;
-    }
-
-    setErrorMessage('');
-    setMessage('');
-    setReschedulingMatchIds((current) => {
-      const next = new Set(current);
-      next.add(match.id);
-      return next;
-    });
   }
 
   function cancelReschedule(matchId: string) {
@@ -1213,7 +1366,9 @@ function ChallengePlayerSystem({
           submittingWinnerId={submittingWinnerId}
           onCancelReschedule={cancelReschedule}
           onAcceptCancellation={acceptCancellation}
+          onAcceptRescheduleRequest={acceptRescheduleRequest}
           onKeepScheduled={keepMatchScheduled}
+          onKeepScheduledAfterRescheduleRequest={keepScheduledAfterRescheduleRequest}
           onProposalChange={updateTimeProposalDraft}
           onProposeTime={proposeMatchTime}
           onRequestCancellation={requestCancellation}
@@ -1535,7 +1690,9 @@ function ChallengePlayerSystem({
         submittingWinnerId={submittingWinnerId}
         onCancelReschedule={cancelReschedule}
         onAcceptCancellation={acceptCancellation}
+        onAcceptRescheduleRequest={acceptRescheduleRequest}
         onKeepScheduled={keepMatchScheduled}
+        onKeepScheduledAfterRescheduleRequest={keepScheduledAfterRescheduleRequest}
         onProposalChange={updateTimeProposalDraft}
         onProposeTime={proposeMatchTime}
         onRequestCancellation={requestCancellation}
@@ -1629,7 +1786,9 @@ type ScheduledMatchesSectionProps = {
   winnerDrafts: Record<string, WinnerDraft>;
   onCancelReschedule: (matchId: string) => void;
   onAcceptCancellation: (match: Match) => void | Promise<void>;
+  onAcceptRescheduleRequest: (match: Match) => void | Promise<void>;
   onKeepScheduled: (match: Match) => void | Promise<void>;
+  onKeepScheduledAfterRescheduleRequest: (match: Match) => void | Promise<void>;
   onProposalChange: (
     matchId: string,
     index: number,
@@ -1637,7 +1796,7 @@ type ScheduledMatchesSectionProps = {
   ) => void;
   onProposeTime: (match: Match) => void | Promise<void>;
   onRequestCancellation: (match: Match, reason: string) => Promise<void>;
-  onRequestReschedule: (match: Match) => void;
+  onRequestReschedule: (match: Match, reason: string) => Promise<void>;
   onSubmitWinner: (match: Match) => Promise<void>;
   onWinnerChange: (matchId: string, nextDraft: Partial<WinnerDraft>) => void;
 };
@@ -1655,7 +1814,9 @@ function ScheduledMatchesSection({
   winnerDrafts,
   onCancelReschedule,
   onAcceptCancellation,
+  onAcceptRescheduleRequest,
   onKeepScheduled,
+  onKeepScheduledAfterRescheduleRequest,
   onProposalChange,
   onProposeTime,
   onRequestCancellation,
@@ -1667,17 +1828,27 @@ function ScheduledMatchesSection({
     matchId: string;
     step: 'confirm' | 'reason';
   } | null>(null);
+  const [rescheduleRequestMatchId, setRescheduleRequestMatchId] = useState<string | null>(null);
   const [scheduledConfirmation, setScheduledConfirmation] = useState<{
     matchId: string;
-    type: 'accept-cancellation' | 'keep-scheduled' | 'submit-winner';
+    type:
+      | 'accept-cancellation'
+      | 'accept-reschedule'
+      | 'keep-reschedule'
+      | 'keep-scheduled'
+      | 'submit-winner';
   } | null>(null);
   const [cancellationReason, setCancellationReason] = useState('');
   const [cancellationReasonError, setCancellationReasonError] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('');
   const hasScheduledActionNeeded = matches.some((match) =>
     isMatchActionNeeded(match, currentPlayer),
   );
   const cancellationMatch = cancellationRequest
     ? matches.find((match) => match.id === cancellationRequest.matchId) ?? null
+    : null;
+  const rescheduleRequestMatch = rescheduleRequestMatchId
+    ? matches.find((match) => match.id === rescheduleRequestMatchId) ?? null
     : null;
   const scheduledConfirmationMatch = scheduledConfirmation
     ? matches.find((match) => match.id === scheduledConfirmation.matchId) ?? null
@@ -1704,6 +1875,18 @@ function ScheduledMatchesSection({
   }, [cancellationRequest, matches]);
 
   useEffect(() => {
+    if (!rescheduleRequestMatchId) {
+      return;
+    }
+
+    const latestMatch = matches.find((match) => match.id === rescheduleRequestMatchId);
+
+    if (!latestMatch || latestMatch.status !== 'scheduled') {
+      closeRescheduleRequest();
+    }
+  }, [matches, rescheduleRequestMatchId]);
+
+  useEffect(() => {
     if (!scheduledConfirmation) {
       return;
     }
@@ -1719,6 +1902,11 @@ function ScheduledMatchesSection({
       ((scheduledConfirmation.type === 'accept-cancellation' ||
         scheduledConfirmation.type === 'keep-scheduled') &&
         latestMatch.status !== 'cancellation_requested') ||
+      ((scheduledConfirmation.type === 'accept-reschedule' ||
+        scheduledConfirmation.type === 'keep-reschedule') &&
+        (latestMatch.status !== 'scheduled' ||
+          !latestMatch.reschedule_requested_by ||
+          Boolean(latestMatch.reschedule_approved_at))) ||
       (scheduledConfirmation.type === 'submit-winner' && latestMatch.status !== 'scheduled')
     ) {
       closeScheduledConfirmation();
@@ -1735,6 +1923,16 @@ function ScheduledMatchesSection({
     setCancellationRequest(null);
     setCancellationReason('');
     setCancellationReasonError('');
+  }
+
+  function openRescheduleRequest(match: Match) {
+    setRescheduleRequestMatchId(match.id);
+    setRescheduleReason(match.reschedule_reason ?? '');
+  }
+
+  function closeRescheduleRequest() {
+    setRescheduleRequestMatchId(null);
+    setRescheduleReason('');
   }
 
   function showCancellationReasonForm() {
@@ -1768,6 +1966,18 @@ function ScheduledMatchesSection({
     closeCancellationRequest();
   }
 
+  async function submitRescheduleRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!rescheduleRequestMatch) {
+      closeRescheduleRequest();
+      return;
+    }
+
+    await onRequestReschedule(rescheduleRequestMatch, rescheduleReason);
+    closeRescheduleRequest();
+  }
+
   function closeScheduledConfirmation() {
     setScheduledConfirmation(null);
   }
@@ -1776,8 +1986,16 @@ function ScheduledMatchesSection({
     setScheduledConfirmation({ matchId: match.id, type: 'keep-scheduled' });
   }
 
+  function openAcceptRescheduleConfirmation(match: Match) {
+    setScheduledConfirmation({ matchId: match.id, type: 'accept-reschedule' });
+  }
+
   function openAcceptCancellationConfirmation(match: Match) {
     setScheduledConfirmation({ matchId: match.id, type: 'accept-cancellation' });
+  }
+
+  function openKeepRescheduleConfirmation(match: Match) {
+    setScheduledConfirmation({ matchId: match.id, type: 'keep-reschedule' });
   }
 
   function openSubmitWinnerConfirmation(match: Match, event: FormEvent<HTMLFormElement>) {
@@ -1804,8 +2022,18 @@ function ScheduledMatchesSection({
       return;
     }
 
+    if (pendingConfirmation.type === 'keep-reschedule') {
+      await onKeepScheduledAfterRescheduleRequest(pendingMatch);
+      return;
+    }
+
     if (pendingConfirmation.type === 'accept-cancellation') {
       await onAcceptCancellation(pendingMatch);
+      return;
+    }
+
+    if (pendingConfirmation.type === 'accept-reschedule') {
+      await onAcceptRescheduleRequest(pendingMatch);
       return;
     }
 
@@ -1840,6 +2068,19 @@ function ScheduledMatchesSection({
                   match.cancellation_requested_by === currentPlayer.id;
                 const cancellationRequesterName = match.cancellation_requested_by
                   ? getPlayerName(match.cancellation_requested_by, currentPlayer, playersById)
+                  : 'A player';
+                const hasPendingRescheduleRequest =
+                  match.status === 'scheduled' &&
+                  Boolean(match.reschedule_requested_by) &&
+                  !match.reschedule_approved_at;
+                const isRescheduleApproved =
+                  match.status === 'scheduled' &&
+                  Boolean(match.reschedule_requested_by) &&
+                  Boolean(match.reschedule_approved_at);
+                const isRescheduleRequester =
+                  match.reschedule_requested_by === currentPlayer.id;
+                const rescheduleRequesterName = match.reschedule_requested_by
+                  ? getPlayerName(match.reschedule_requested_by, currentPlayer, playersById)
                   : 'A player';
 
                 return (
@@ -1918,22 +2159,66 @@ function ScheduledMatchesSection({
                 opponentName={getOpponentName(match, currentPlayer, playersById)}
                 showActions={false}
               />
-              {isRequestingNewTimes && !isCancellationRequested && (
+              {hasPendingRescheduleRequest && !isCancellationRequested && (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+                  <p className="text-sm font-black text-amber-950">
+                    {isRescheduleRequester
+                      ? 'You requested a new match time.'
+                      : `${rescheduleRequesterName} requested a new match time.`}
+                  </p>
+                  {match.reschedule_reason && (
+                    <p className="mt-2 text-sm font-semibold text-amber-900">
+                      Reason: {match.reschedule_reason}
+                    </p>
+                  )}
+                  {isRescheduleRequester ? (
+                    <p className="mt-3 text-sm text-amber-900">
+                      Waiting for your opponent to accept the reschedule request or keep the match scheduled.
+                    </p>
+                  ) : (
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                      <button
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-court-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        type="button"
+                        onClick={() => openAcceptRescheduleConfirmation(match)}
+                        disabled={actionId === match.id}
+                      >
+                        <CheckIcon />
+                        Accept Reschedule Request
+                      </button>
+                      <button
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        type="button"
+                        onClick={() => openKeepRescheduleConfirmation(match)}
+                        disabled={actionId === match.id}
+                      >
+                        <CheckIcon />
+                        Keep Match Scheduled
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {(isRequestingNewTimes || isRescheduleApproved) && !isCancellationRequested && (
                 <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-sm font-bold text-ink-900">New times requested</p>
+                      <p className="text-sm font-bold text-ink-900">
+                        {isRescheduleApproved ? 'Reschedule approved' : 'New times requested'}
+                      </p>
                       <p className="mt-1 text-sm text-ink-700">
                         The scheduled time stays visible until you submit replacement options.
                       </p>
                     </div>
-                    <button
-                      className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
-                      type="button"
-                      onClick={() => onCancelReschedule(match.id)}
-                    >
-                      Back to Proposed Times
-                    </button>
+                    {!isRescheduleApproved && (
+                      <button
+                        className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
+                        type="button"
+                        onClick={() => onCancelReschedule(match.id)}
+                      >
+                        Back to Proposed Times
+                      </button>
+                    )}
                   </div>
                   <TimeProposalForm
                     actionId={actionId}
@@ -2006,11 +2291,16 @@ function ScheduledMatchesSection({
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
                   type="button"
-                  onClick={() => onRequestReschedule(match)}
-                  disabled={actionId === match.id || isRequestingNewTimes}
+                  onClick={() => openRescheduleRequest(match)}
+                  disabled={
+                    actionId === match.id ||
+                    isRequestingNewTimes ||
+                    hasPendingRescheduleRequest ||
+                    isRescheduleApproved
+                  }
                 >
                   <ClockIcon />
-                  Request New Times
+                  Request New Time
                 </button>
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-full border border-red-300 bg-white px-4 py-2.5 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2050,12 +2340,26 @@ function ScheduledMatchesSection({
           onSubmit={submitCancellationReason}
         />
       )}
+      {rescheduleRequestMatch && (
+        <RescheduleRequestDialog
+          actionId={actionId}
+          match={rescheduleRequestMatch}
+          reason={rescheduleReason}
+          onCancel={closeRescheduleRequest}
+          onReasonChange={setRescheduleReason}
+          onSubmit={submitRescheduleRequest}
+        />
+      )}
       {scheduledConfirmation && scheduledConfirmationMatch && (
         <ActionConfirmationDialog
           cancelLabel="Go Back"
           confirmLabel={
             scheduledConfirmation.type === 'accept-cancellation'
               ? 'Accept Cancellation'
+              : scheduledConfirmation.type === 'accept-reschedule'
+              ? 'Accept Reschedule'
+              : scheduledConfirmation.type === 'keep-reschedule'
+              ? 'Keep Match Scheduled'
               : scheduledConfirmation.type === 'keep-scheduled'
               ? 'Keep Match Scheduled'
               : 'Submit Winner'
@@ -2063,6 +2367,10 @@ function ScheduledMatchesSection({
           message={
             scheduledConfirmation.type === 'accept-cancellation'
               ? 'Accept the cancellation request and cancel this match.'
+              : scheduledConfirmation.type === 'accept-reschedule'
+              ? 'Accept the reschedule request and allow new match times to be proposed.'
+              : scheduledConfirmation.type === 'keep-reschedule'
+              ? 'Decline the reschedule request and keep the original match time.'
               : scheduledConfirmation.type === 'keep-scheduled'
               ? 'Decline the cancellation request and keep this match scheduled.'
               : `Submit this result and update the match record. Winner: ${scheduledConfirmationWinnerName}.`
@@ -2070,6 +2378,10 @@ function ScheduledMatchesSection({
           title={
             scheduledConfirmation.type === 'accept-cancellation'
               ? 'Accept cancellation?'
+              : scheduledConfirmation.type === 'accept-reschedule'
+              ? 'Accept reschedule request?'
+              : scheduledConfirmation.type === 'keep-reschedule'
+              ? 'Keep original match time?'
               : scheduledConfirmation.type === 'keep-scheduled'
               ? 'Keep match scheduled?'
               : 'Submit winner?'
@@ -2198,6 +2510,74 @@ function CancellationRequestDialog({
             </div>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+function RescheduleRequestDialog({
+  actionId,
+  match,
+  reason,
+  onCancel,
+  onReasonChange,
+  onSubmit,
+}: {
+  actionId: string | null;
+  match: Match;
+  reason: string;
+  onCancel: () => void;
+  onReasonChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const isSubmitting = actionId === match.id;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reschedule-request-title"
+    >
+      <div className="w-full max-w-md rounded-2xl border border-line-200 bg-white p-5 shadow-2xl">
+        <form onSubmit={onSubmit}>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
+            Request New Time
+          </p>
+          <h3 className="mt-2 text-xl font-black text-ink-900" id="reschedule-request-title">
+            Ask to reschedule?
+          </h3>
+          <p className="mt-3 text-sm font-semibold leading-6 text-ink-700">
+            The current match time stays scheduled unless your opponent accepts.
+          </p>
+          <label className="mt-4 block">
+            <span className="text-sm font-bold text-ink-700">Reason optional</span>
+            <textarea
+              className="mt-2 min-h-24 w-full rounded-xl border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none transition focus:border-court-500 focus:ring-2 focus:ring-court-100"
+              value={reason}
+              maxLength={240}
+              onChange={(event) => onReasonChange(event.target.value)}
+              placeholder="Example: I have a schedule conflict."
+            />
+          </label>
+          <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button
+              className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
+              type="button"
+              onClick={onCancel}
+              disabled={isSubmitting}
+            >
+              Go Back
+            </button>
+            <button
+              className="inline-flex items-center justify-center rounded-full bg-court-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
+              type="submit"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Sending...' : 'Send Request'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
