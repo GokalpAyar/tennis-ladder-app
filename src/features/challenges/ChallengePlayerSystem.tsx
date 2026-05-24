@@ -120,6 +120,14 @@ function ChallengePlayerSystem({
     loadChallengeData();
   }, [userId]);
 
+  useEffect(() => {
+    const refreshIntervalId = window.setInterval(() => {
+      void loadChallengeData({ quiet: true });
+    }, 25000);
+
+    return () => window.clearInterval(refreshIntervalId);
+  }, [userId]);
+
   const playersById = useMemo(() => {
     return new Map(players.map((player) => [player.id, player]));
   }, [players]);
@@ -186,9 +194,13 @@ function ChallengePlayerSystem({
     return players.filter((player) => eligiblePlayerIds.has(player.id));
   }, [eligiblePlayerIds, players]);
 
-  async function loadChallengeData() {
-    setIsLoading(true);
-    setErrorMessage('');
+  async function loadChallengeData(options: { quiet?: boolean } = {}) {
+    const isQuietRefresh = options.quiet === true;
+
+    if (!isQuietRefresh) {
+      setIsLoading(true);
+      setErrorMessage('');
+    }
 
     const { data: rankingRows, error: rankingsError } = await supabase
       .from('ladder_rankings')
@@ -196,8 +208,10 @@ function ChallengePlayerSystem({
       .order('rank_position', { ascending: true });
 
     if (rankingsError) {
-      setErrorMessage(rankingsError.message);
-      setIsLoading(false);
+      if (!isQuietRefresh) {
+        setErrorMessage(rankingsError.message);
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -210,8 +224,10 @@ function ChallengePlayerSystem({
         : { data: [], error: null };
 
     if (profilesError) {
-      setErrorMessage(profilesError.message);
-      setIsLoading(false);
+      if (!isQuietRefresh) {
+        setErrorMessage(profilesError.message);
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -230,7 +246,9 @@ function ChallengePlayerSystem({
 
     if (!nextCurrentPlayer && !adminPreview) {
       setMatches([]);
-      setIsLoading(false);
+      if (!isQuietRefresh) {
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -247,8 +265,10 @@ function ChallengePlayerSystem({
           .order('created_at', { ascending: false }));
 
     if (matchesError) {
-      setErrorMessage(matchesError.message);
-      setIsLoading(false);
+      if (!isQuietRefresh) {
+        setErrorMessage(matchesError.message);
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -260,7 +280,9 @@ function ChallengePlayerSystem({
           : [],
       })),
     );
-    setIsLoading(false);
+    if (!isQuietRefresh) {
+      setIsLoading(false);
+    }
   }
 
   async function sendChallenge(opponentId: string) {
