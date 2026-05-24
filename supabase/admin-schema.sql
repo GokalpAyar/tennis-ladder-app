@@ -421,6 +421,10 @@ begin
 end;
 $$;
 
+-- Drop first so changed argument names/signatures cannot leave Supabase with
+-- an older cached RPC definition.
+drop function if exists public.admin_update_player_ladder_row(uuid, text, integer, integer, integer);
+
 create or replace function public.admin_update_player_ladder_row(
   target_ranking_id uuid,
   target_full_name text,
@@ -553,6 +557,8 @@ drop function if exists public.admin_delete_player_profile(uuid);
 grant execute on function public.admin_approve_player_with_rank(uuid, integer) to authenticated;
 grant execute on function public.admin_update_player_ladder_row(uuid, text, integer, integer, integer) to authenticated;
 grant execute on function public.admin_deactivate_player(uuid) to authenticated;
+
+notify pgrst, 'reload schema';
 
 create or replace function public.handle_new_user_profile()
 returns trigger

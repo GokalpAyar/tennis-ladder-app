@@ -66,7 +66,6 @@ function AdminPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [rankingDrafts, setRankingDrafts] = useState<Record<string, RankingDraft>>({});
   const [approvalRankDrafts, setApprovalRankDrafts] = useState<Record<string, number>>({});
-  const [winnerDrafts, setWinnerDrafts] = useState<Record<string, string>>({});
   const [activeSection, setActiveSection] = useState<AdminSection>('pending');
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('active');
   const [isLoading, setIsLoading] = useState(true);
@@ -177,19 +176,6 @@ function AdminPage() {
         .filter((profile) => profile.status === 'pending')
         .forEach((profile, index) => {
           nextDrafts[profile.id] = nextDrafts[profile.id] ?? highestRank + index + 1;
-        });
-
-      return nextDrafts;
-    });
-    setWinnerDrafts((current) => {
-      const nextDrafts = { ...current };
-
-      ((matchRows ?? []) as Match[])
-        .filter((match) => match.status === 'completed')
-        .forEach((match) => {
-          if (match.winner_id) {
-            nextDrafts[match.id] = nextDrafts[match.id] ?? match.winner_id;
-          }
         });
 
       return nextDrafts;
@@ -376,7 +362,7 @@ function AdminPage() {
 
   async function updateMatchStatus(match: Match, status: MatchStatus) {
     if (status === 'completed') {
-      setErrorMessage('Completed matches require a winner. Use the winner field.');
+      setErrorMessage('Completed matches are recorded by players. Correct records in Ladder Management.');
       return;
     }
 
@@ -399,34 +385,6 @@ function AdminPage() {
     }
 
     setMessage('Match status updated.');
-    await loadAdminData();
-  }
-
-  async function saveCompletedWinner(match: Match) {
-    const winnerId = winnerDrafts[match.id] ?? match.winner_id;
-
-    if (!winnerId) {
-      setErrorMessage('Choose a winner before saving.');
-      return;
-    }
-
-    setActionId(`winner-${match.id}`);
-    setMessage('');
-    setErrorMessage('');
-
-    const { error } = await supabase
-      .from('matches')
-      .update({ winner_id: winnerId })
-      .eq('id', match.id);
-
-    setActionId(null);
-
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
-
-    setMessage('Winner updated.');
     await loadAdminData();
   }
 
@@ -759,16 +717,8 @@ function AdminPage() {
                         key={match.id}
                         match={match}
                         playersById={profilesById}
-                        winnerDraft={winnerDrafts[match.id] ?? match.winner_id ?? ''}
                         onCancel={() => cancelMatch(match)}
                         onStatusChange={(status) => updateMatchStatus(match, status)}
-                        onWinnerChange={(winnerId) =>
-                          setWinnerDrafts((current) => ({
-                            ...current,
-                            [match.id]: winnerId,
-                          }))
-                        }
-                        onWinnerSave={() => saveCompletedWinner(match)}
                       />
                     ))
                   )}
@@ -857,19 +807,13 @@ function MatchAdminCard({
   match,
   onCancel,
   onStatusChange,
-  onWinnerChange,
-  onWinnerSave,
   playersById,
-  winnerDraft,
 }: {
   actionId: string | null;
   match: Match;
   onCancel: () => void;
   onStatusChange: (status: MatchStatus) => void;
-  onWinnerChange: (winnerId: string) => void;
-  onWinnerSave: () => void;
   playersById: Map<string, Profile>;
-  winnerDraft: string;
 }) {
   const challenger = playersById.get(match.challenger_id);
   const opponent = playersById.get(match.opponent_id);
@@ -926,26 +870,10 @@ function MatchAdminCard({
           )}
 
           {match.status === 'completed' && (
-            <>
-              <select
-                className="admin-input w-full sm:w-52"
-                value={winnerDraft}
-                onChange={(event) => onWinnerChange(event.target.value)}
-                disabled={actionId === `winner-${match.id}`}
-              >
-                <option value="">Choose winner</option>
-                <option value={match.challenger_id}>{getProfileName(challenger)}</option>
-                <option value={match.opponent_id}>{getProfileName(opponent)}</option>
-              </select>
-              <button
-                className="admin-primary-button"
-                type="button"
-                onClick={onWinnerSave}
-                disabled={actionId === `winner-${match.id}`}
-              >
-                {actionId === `winner-${match.id}` ? 'Saving...' : 'Save Winner'}
-              </button>
-            </>
+            <p className="max-w-xs rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold leading-5 text-slate-700">
+              If a result was entered incorrectly, adjust wins/losses and rankings
+              manually in Ladder Management.
+            </p>
           )}
         </div>
       </div>
