@@ -380,6 +380,8 @@ begin
     raise exception 'Admin access required.';
   end if;
 
+  perform pg_advisory_xact_lock(hashtext('ladder_rankings_reorder'));
+
   if target_profile_id is null then
     raise exception 'Player profile is required.';
   end if;
@@ -451,6 +453,8 @@ begin
   if not public.is_admin(auth.uid()) then
     raise exception 'Admin access required.';
   end if;
+
+  perform pg_advisory_xact_lock(hashtext('ladder_rankings_reorder'));
 
   if target_player_id is null then
     raise exception 'Player profile is required.';

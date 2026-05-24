@@ -11,7 +11,7 @@ type Profile = {
 };
 
 type LadderRanking = {
-  id: string;
+  id: number | string;
   player_id: string;
   rank_position: number;
   wins: number;
@@ -66,6 +66,7 @@ function AdminPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [rankingDrafts, setRankingDrafts] = useState<Record<string, RankingDraft>>({});
   const [approvalRankDrafts, setApprovalRankDrafts] = useState<Record<string, number>>({});
+  const [profileNameDrafts, setProfileNameDrafts] = useState<Record<string, string>>({});
   const [activeSection, setActiveSection] = useState<AdminSection>('pending');
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('active');
   const [isLoading, setIsLoading] = useState(true);
@@ -160,13 +161,18 @@ function AdminPage() {
     setRankingDrafts(
       Object.fromEntries(
         nextRankings.map((ranking) => [
-          ranking.id,
+          getRankingKey(ranking),
           {
             rank_position: ranking.rank_position,
             wins: ranking.wins ?? 0,
             losses: ranking.losses ?? 0,
           },
         ]),
+      ),
+    );
+    setProfileNameDrafts(
+      Object.fromEntries(
+        nextProfiles.map((profile) => [profile.id, profile.full_name ?? '']),
       ),
     );
     setApprovalRankDrafts((current) => {
@@ -200,10 +206,14 @@ function AdminPage() {
     setMessage('');
     setErrorMessage('');
 
-    const { error } = await supabase.rpc('admin_approve_player_with_rank', {
+    const rpcPayload = {
       target_profile_id: profileId,
       target_rank_position: rankPosition,
-    });
+    };
+
+    console.log('admin_approve_player_with_rank payload', rpcPayload);
+
+    const { error } = await supabase.rpc('admin_approve_player_with_rank', rpcPayload);
 
     setActionId(null);
 
@@ -297,19 +307,21 @@ function AdminPage() {
   }
 
   async function saveRanking(ranking: LadderRanking) {
-    const draft = rankingDrafts[ranking.id];
+    const rankingKey = getRankingKey(ranking);
+    const draft = rankingDrafts[rankingKey];
     const profile = profilesById.get(ranking.player_id);
+    const fullName = profileNameDrafts[ranking.player_id]?.trim() || null;
 
     if (!draft) {
       return;
     }
 
-    setActionId(`ranking-${ranking.id}`);
+    setActionId(`ranking-${rankingKey}`);
     setMessage('');
     setErrorMessage('');
 
     const rpcPayload = {
-      target_full_name: profile?.full_name ?? null,
+      target_full_name: fullName ?? profile?.full_name ?? null,
       target_losses: draft.losses,
       target_player_id: ranking.player_id,
       target_rank_position: draft.rank_position,
@@ -441,6 +453,13 @@ function AdminPage() {
         ...current[rankingId],
         [field]: value,
       },
+    }));
+  }
+
+  function updateProfileNameDraft(profileId: string, value: string) {
+    setProfileNameDrafts((current) => ({
+      ...current,
+      [profileId]: value,
     }));
   }
 
@@ -587,7 +606,8 @@ function AdminPage() {
                     ) : (
                       sortedRankings.map((ranking) => {
                         const profile = profilesById.get(ranking.player_id);
-                        const draft = rankingDrafts[ranking.id] ?? {
+                        const rankingKey = getRankingKey(ranking);
+                        const draft = rankingDrafts[rankingKey] ?? {
                           losses: ranking.losses,
                           rank_position: ranking.rank_position,
                           wins: ranking.wins,
@@ -601,7 +621,7 @@ function AdminPage() {
                         return (
                           <article
                             className="grid gap-3 px-4 py-4 lg:grid-cols-[5rem_minmax(0,1fr)_8rem_8rem_8rem_12rem] lg:items-center"
-                            key={ranking.id}
+                            key={rankingKey}
                           >
                             <div>
                               <NumberInput
@@ -609,7 +629,7 @@ function AdminPage() {
                                 min={1}
                                 value={draft.rank_position}
                                 onChange={(value) =>
-                                  updateRankingDraft(ranking.id, 'rank_position', value)
+                                  updateRankingDraft(rankingKey, 'rank_position', value)
                                 }
                               />
                               {rankTaken && (
@@ -618,18 +638,24 @@ function AdminPage() {
                                 </p>
                               )}
                             </div>
-                            <PlayerIdentity profile={profile} />
+                            <PlayerNameEditor
+                              email={profile?.email ?? null}
+                              name={profileNameDrafts[ranking.player_id] ?? profile?.full_name ?? ''}
+                              onChange={(value) =>
+                                updateProfileNameDraft(ranking.player_id, value)
+                              }
+                            />
                             <NumberInput
                               label="Wins"
                               min={0}
                               value={draft.wins}
-                              onChange={(value) => updateRankingDraft(ranking.id, 'wins', value)}
+                              onChange={(value) => updateRankingDraft(rankingKey, 'wins', value)}
                             />
                             <NumberInput
                               label="Losses"
                               min={0}
                               value={draft.losses}
-                              onChange={(value) => updateRankingDraft(ranking.id, 'losses', value)}
+                              onChange={(value) => updateRankingDraft(rankingKey, 'losses', value)}
                             />
                             <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm font-black text-[#071a3d]">
                               {draft.wins}-{draft.losses}
@@ -639,9 +665,9 @@ function AdminPage() {
                                 className="admin-primary-button"
                                 type="button"
                                 onClick={() => saveRanking(ranking)}
-                                disabled={actionId === `ranking-${ranking.id}`}
+                                disabled={actionId === `ranking-${rankingKey}`}
                               >
-                                {actionId === `ranking-${ranking.id}` ? 'Saving...' : 'Save'}
+                                {actionId === `ranking-${rankingKey}` ? 'Saving...' : 'Save'}
                               </button>
                               <button
                                 className="admin-danger-button"
@@ -803,6 +829,30 @@ function PlayerIdentity({ profile }: { profile: Profile | undefined }) {
         {profile?.email ?? 'Email not stored'}
       </p>
     </div>
+  );
+}
+
+function PlayerNameEditor({
+  email,
+  name,
+  onChange,
+}: {
+  email: string | null;
+  name: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className="admin-label">Player</span>
+      <input
+        className="admin-input mt-1"
+        value={name}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <span className="mt-1 block truncate text-xs font-semibold text-slate-600">
+        {email ?? 'Email not stored'}
+      </span>
+    </label>
   );
 }
 
@@ -1009,6 +1059,10 @@ function getSafeStatusOptions(match: Match) {
 
 function getProfileName(profile: Profile | undefined) {
   return profile?.full_name?.trim() || profile?.email || 'Unnamed player';
+}
+
+function getRankingKey(ranking: LadderRanking) {
+  return String(ranking.id);
 }
 
 function getStatusLabel(status: MatchStatus) {
