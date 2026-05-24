@@ -362,6 +362,54 @@ $$;
 
 grant execute on function public.update_my_profile_full_name(text) to authenticated;
 
+create or replace function public.normalize_ladder_rankings()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  max_rank integer;
+  ranking_count integer;
+  temp_offset integer;
+begin
+  select coalesce(max(rank_position), 0), count(*)
+  into max_rank, ranking_count
+  from public.ladder_rankings;
+
+  if ranking_count = 0 then
+    return;
+  end if;
+
+  temp_offset := greatest(10000, max_rank + ranking_count + 10000);
+
+  update public.ladder_rankings
+  set rank_position = coalesce(rank_position, 0) + temp_offset;
+
+  with normalized as (
+    select
+      id,
+      row_number() over (
+        order by rank_position asc, created_at asc nulls last, id asc
+      ) as normalized_rank
+    from public.ladder_rankings
+  )
+  update public.ladder_rankings as ranking
+  set rank_position = normalized.normalized_rank
+  from normalized
+  where ranking.id = normalized.id;
+end;
+$$;
+
+select public.normalize_ladder_rankings();
+
+revoke all on function public.normalize_ladder_rankings() from public;
+revoke all on function public.normalize_ladder_rankings() from anon;
+revoke all on function public.normalize_ladder_rankings() from authenticated;
+
+create unique index if not exists ladder_rankings_rank_position_key
+on public.ladder_rankings (rank_position);
+
 create or replace function public.admin_approve_player_with_rank(
   target_profile_id uuid,
   target_rank_position integer
@@ -398,11 +446,13 @@ begin
     raise exception 'Player is already on the ladder.';
   end if;
 
+  perform public.normalize_ladder_rankings();
+
   select coalesce(max(rank_position), 0)
   into max_rank
   from public.ladder_rankings;
 
-  safe_rank := target_rank_position;
+  safe_rank := least(target_rank_position, max_rank + 1);
   temp_offset := greatest(10000, max_rank + 10000);
 
   update public.ladder_rankings
@@ -474,6 +524,8 @@ begin
     raise exception 'Losses must be 0 or greater.';
   end if;
 
+  perform public.normalize_ladder_rankings();
+
   select player_id, rank_position
   into current_player_id, current_rank
   from public.ladder_rankings
@@ -487,7 +539,7 @@ begin
   into max_rank
   from public.ladder_rankings;
 
-  safe_rank := target_rank_position;
+  safe_rank := least(target_rank_position, max_rank);
   safe_wins := target_wins;
   safe_losses := target_losses;
   temp_offset := greatest(10000, max_rank + 10000);
