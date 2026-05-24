@@ -3204,7 +3204,7 @@ function PyramidLadder({
     centerPyramidView('smooth');
   }
 
-  function getTouchDistance(touches: TouchList) {
+  function getTouchDistance(touches: TouchEvent<HTMLDivElement>['touches']) {
     const firstTouch = touches.item(0);
     const secondTouch = touches.item(1);
 
@@ -3218,7 +3218,7 @@ function PyramidLadder({
     );
   }
 
-  function getTouchCenter(touches: TouchList) {
+  function getTouchCenter(touches: TouchEvent<HTMLDivElement>['touches']) {
     const firstTouch = touches.item(0);
     const secondTouch = touches.item(1);
 
