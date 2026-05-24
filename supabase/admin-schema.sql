@@ -402,7 +402,7 @@ begin
   into max_rank
   from public.ladder_rankings;
 
-  safe_rank := least(target_rank_position, max_rank + 1);
+  safe_rank := target_rank_position;
   temp_offset := greatest(10000, max_rank + 10000);
 
   update public.ladder_rankings
@@ -427,6 +427,8 @@ $$;
 -- cached RPC definition. This RPC uses player_id because ladder_rankings.id
 -- may be numeric in existing databases.
 drop function if exists public.admin_update_player_ladder_row(uuid, text, integer, integer, integer);
+drop function if exists public.admin_update_player_ladder_row(bigint, text, integer, integer, integer);
+drop function if exists public.admin_update_player_ladder_row(integer, text, integer, integer, integer);
 
 create or replace function public.admin_update_player_ladder_row(
   target_player_id uuid,
@@ -485,7 +487,7 @@ begin
   into max_rank
   from public.ladder_rankings;
 
-  safe_rank := least(target_rank_position, max_rank);
+  safe_rank := target_rank_position;
   safe_wins := target_wins;
   safe_losses := target_losses;
   temp_offset := greatest(10000, max_rank + 10000);
