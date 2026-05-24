@@ -1381,26 +1381,24 @@ function ChallengePlayerSystem({
         </div>
       </section>
 
-      {isDashboard && hasActiveMatch && (
+      {isDashboard && (
         <section
           className={`${cardClass} md:hidden ${
             hasMatchActionNeeded ? 'match-update-glow' : ''
           }`}
         >
-          <div className="flex flex-col gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
-                Active Match Summary
-              </p>
-              <p className="mt-2 text-lg font-black text-ink-900">You have an active match.</p>
-              <p className="mt-1 text-sm text-ink-700">
-                Go to Activities to accept, schedule, cancel, or report a result.
-              </p>
-            </div>
-            <Link className="btn-primary w-full text-sm" to="/activities">
-              Go to Activities
-            </Link>
-          </div>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
+            My Match
+          </p>
+          <h2 className="mt-2 text-lg font-black tracking-tight text-ink-900">
+            {dashboardMatchSummary.title}
+          </h2>
+          <p className="mt-1 text-sm leading-5 text-ink-700">
+            {dashboardMatchSummary.description}
+          </p>
+          <Link className="btn-primary mt-4 w-full px-3 py-2 text-sm" to="/activities">
+            {dashboardMatchSummary.actionLabel}
+          </Link>
         </section>
       )}
 
