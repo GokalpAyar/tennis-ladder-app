@@ -312,9 +312,7 @@ function ChallengePlayerSystem({
     await loadChallengeData();
   }
 
-  async function proposeMatchTime(match: Match, event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function proposeMatchTime(match: Match) {
     if (!isCurrentUserMatchPlayer(match, userId)) {
       setErrorMessage('Only players in this match can propose times.');
       return;
@@ -325,16 +323,6 @@ function ChallengePlayerSystem({
     if (!proposalResult.ok) {
       setErrorMessage(proposalResult.message);
       return;
-    }
-
-    if (match.proposed_match_options.length > 0 || match.status === 'scheduled') {
-      const confirmed = window.confirm(
-        'Replace the previous proposed times with these new options?',
-      );
-
-      if (!confirmed) {
-        return;
-      }
     }
 
     const isChallenger = match.challenger_id === userId;
@@ -471,14 +459,6 @@ function ChallengePlayerSystem({
       return;
     }
 
-    const confirmed = window.confirm(
-      'Cancel this match? This removes it from active challenges and scheduled matches.',
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
     const cancelReason =
       window.prompt('Optional: add a short cancellation reason.')?.trim() ?? '';
 
@@ -603,12 +583,6 @@ function ChallengePlayerSystem({
       return;
     }
 
-    const confirmed = window.confirm('Accept this cancellation request and cancel the match?');
-
-    if (!confirmed) {
-      return;
-    }
-
     setActionId(match.id);
     setCancelingMatchId(match.id);
     setMessage('');
@@ -671,12 +645,6 @@ function ChallengePlayerSystem({
 
     if (!requesterId) {
       setErrorMessage('Cancellation requester is missing. Please refresh and try again.');
-      return;
-    }
-
-    const confirmed = window.confirm('Keep this match scheduled?');
-
-    if (!confirmed) {
       return;
     }
 
@@ -776,9 +744,7 @@ function ChallengePlayerSystem({
     });
   }
 
-  async function submitWinner(match: Match, event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function submitWinner(match: Match) {
     if (!currentPlayer || match.status !== 'scheduled') {
       return;
     }
@@ -792,13 +758,6 @@ function ChallengePlayerSystem({
     }
 
     const winnerName = getPlayerName(winnerDraft.winnerId, currentPlayer, playersById);
-    const confirmed = window.confirm(
-      `Complete match and update ladder?\n\nWinner: ${winnerName}`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
 
     setActionId(match.id);
     setSubmittingWinnerId(match.id);
@@ -1229,7 +1188,7 @@ function ChallengePlayerSystem({
                   proposalDrafts={timeProposalDrafts[match.id] ?? getDefaultTimeProposalDrafts()}
                   onAccept={() => updateChallengeStatus(match.id, 'accepted')}
                   onDecline={() => updateChallengeStatus(match.id, 'declined')}
-                  onPropose={(event) => proposeMatchTime(match, event)}
+                  onPropose={() => proposeMatchTime(match)}
                   onChooseTime={(proposal) => chooseMatchTime(match, proposal)}
                   onCancel={() => cancelMatch(match)}
                   onProposalChange={(index, nextDraft) =>
@@ -1549,7 +1508,7 @@ function ChallengePlayerSystem({
                 proposalDrafts={timeProposalDrafts[match.id] ?? getDefaultTimeProposalDrafts()}
                 onAccept={() => updateChallengeStatus(match.id, 'accepted')}
                 onDecline={() => updateChallengeStatus(match.id, 'declined')}
-                onPropose={(event) => proposeMatchTime(match, event)}
+                onPropose={() => proposeMatchTime(match)}
                 onChooseTime={(proposal) => chooseMatchTime(match, proposal)}
                 onCancel={() => cancelMatch(match)}
                 onProposalChange={(index, nextDraft) =>
@@ -1649,11 +1608,11 @@ type ChallengeCardProps = {
   match: Match;
   playersById: Map<string, RankedPlayer>;
   proposalDrafts: TimeProposalDraft[];
-  onAccept: () => void;
-  onDecline: () => void;
-  onPropose: (event: FormEvent<HTMLFormElement>) => void;
+  onAccept: () => void | Promise<void>;
+  onDecline: () => void | Promise<void>;
+  onPropose: () => void | Promise<void>;
   onChooseTime: (proposal: MatchTimeProposal) => void;
-  onCancel: () => void;
+  onCancel: () => void | Promise<void>;
   onProposalChange: (index: number, nextDraft: Partial<TimeProposalDraft>) => void;
 };
 
@@ -1669,17 +1628,17 @@ type ScheduledMatchesSectionProps = {
   submittingWinnerId: string | null;
   winnerDrafts: Record<string, WinnerDraft>;
   onCancelReschedule: (matchId: string) => void;
-  onAcceptCancellation: (match: Match) => void;
-  onKeepScheduled: (match: Match) => void;
+  onAcceptCancellation: (match: Match) => void | Promise<void>;
+  onKeepScheduled: (match: Match) => void | Promise<void>;
   onProposalChange: (
     matchId: string,
     index: number,
     nextDraft: Partial<TimeProposalDraft>,
   ) => void;
-  onProposeTime: (match: Match, event: FormEvent<HTMLFormElement>) => void;
+  onProposeTime: (match: Match) => void | Promise<void>;
   onRequestCancellation: (match: Match, reason: string) => Promise<void>;
   onRequestReschedule: (match: Match) => void;
-  onSubmitWinner: (match: Match, event: FormEvent<HTMLFormElement>) => void;
+  onSubmitWinner: (match: Match) => Promise<void>;
   onWinnerChange: (matchId: string, nextDraft: Partial<WinnerDraft>) => void;
 };
 
@@ -1708,6 +1667,10 @@ function ScheduledMatchesSection({
     matchId: string;
     step: 'confirm' | 'reason';
   } | null>(null);
+  const [scheduledConfirmation, setScheduledConfirmation] = useState<{
+    matchId: string;
+    type: 'accept-cancellation' | 'keep-scheduled' | 'submit-winner';
+  } | null>(null);
   const [cancellationReason, setCancellationReason] = useState('');
   const [cancellationReasonError, setCancellationReasonError] = useState('');
   const hasScheduledActionNeeded = matches.some((match) =>
@@ -1716,6 +1679,17 @@ function ScheduledMatchesSection({
   const cancellationMatch = cancellationRequest
     ? matches.find((match) => match.id === cancellationRequest.matchId) ?? null
     : null;
+  const scheduledConfirmationMatch = scheduledConfirmation
+    ? matches.find((match) => match.id === scheduledConfirmation.matchId) ?? null
+    : null;
+  const scheduledConfirmationWinnerId =
+    scheduledConfirmation?.type === 'submit-winner' && scheduledConfirmationMatch
+      ? winnerDrafts[scheduledConfirmationMatch.id]?.winnerId
+      : null;
+  const scheduledConfirmationWinnerName =
+    scheduledConfirmationWinnerId && scheduledConfirmationMatch
+      ? getPlayerName(scheduledConfirmationWinnerId, currentPlayer, playersById)
+      : '';
 
   useEffect(() => {
     if (!cancellationRequest) {
@@ -1728,6 +1702,28 @@ function ScheduledMatchesSection({
       closeCancellationRequest();
     }
   }, [cancellationRequest, matches]);
+
+  useEffect(() => {
+    if (!scheduledConfirmation) {
+      return;
+    }
+
+    const latestMatch = matches.find((match) => match.id === scheduledConfirmation.matchId);
+
+    if (!latestMatch) {
+      closeScheduledConfirmation();
+      return;
+    }
+
+    if (
+      ((scheduledConfirmation.type === 'accept-cancellation' ||
+        scheduledConfirmation.type === 'keep-scheduled') &&
+        latestMatch.status !== 'cancellation_requested') ||
+      (scheduledConfirmation.type === 'submit-winner' && latestMatch.status !== 'scheduled')
+    ) {
+      closeScheduledConfirmation();
+    }
+  }, [matches, scheduledConfirmation]);
 
   function openCancellationRequest(match: Match) {
     setCancellationRequest({ matchId: match.id, step: 'confirm' });
@@ -1770,6 +1766,50 @@ function ScheduledMatchesSection({
 
     await onRequestCancellation(cancellationMatch, trimmedReason);
     closeCancellationRequest();
+  }
+
+  function closeScheduledConfirmation() {
+    setScheduledConfirmation(null);
+  }
+
+  function openKeepScheduledConfirmation(match: Match) {
+    setScheduledConfirmation({ matchId: match.id, type: 'keep-scheduled' });
+  }
+
+  function openAcceptCancellationConfirmation(match: Match) {
+    setScheduledConfirmation({ matchId: match.id, type: 'accept-cancellation' });
+  }
+
+  function openSubmitWinnerConfirmation(match: Match, event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!winnerDrafts[match.id]?.winnerId) {
+      return;
+    }
+
+    setScheduledConfirmation({ matchId: match.id, type: 'submit-winner' });
+  }
+
+  async function confirmScheduledAction() {
+    const pendingConfirmation = scheduledConfirmation;
+    const pendingMatch = scheduledConfirmationMatch;
+    closeScheduledConfirmation();
+
+    if (!pendingConfirmation || !pendingMatch) {
+      return;
+    }
+
+    if (pendingConfirmation.type === 'keep-scheduled') {
+      await onKeepScheduled(pendingMatch);
+      return;
+    }
+
+    if (pendingConfirmation.type === 'accept-cancellation') {
+      await onAcceptCancellation(pendingMatch);
+      return;
+    }
+
+    await onSubmitWinner(pendingMatch);
   }
 
   return (
@@ -1840,7 +1880,7 @@ function ScheduledMatchesSection({
                       <button
                         className="inline-flex items-center justify-center gap-2 rounded-full bg-red-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                         type="button"
-                        onClick={() => onAcceptCancellation(match)}
+                        onClick={() => openAcceptCancellationConfirmation(match)}
                         disabled={cancelingMatchId === match.id || actionId === match.id}
                       >
                         <XIcon />
@@ -1849,7 +1889,7 @@ function ScheduledMatchesSection({
                       <button
                         className="inline-flex items-center justify-center gap-2 rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
                         type="button"
-                        onClick={() => onKeepScheduled(match)}
+                        onClick={() => openKeepScheduledConfirmation(match)}
                         disabled={actionId === match.id}
                       >
                         <CheckIcon />
@@ -1909,7 +1949,7 @@ function ScheduledMatchesSection({
               {!isCancellationRequested && (
               <form
                 className="mt-4 rounded-xl border border-line-200 bg-white p-4"
-                onSubmit={(event) => onSubmitWinner(match, event)}
+                onSubmit={(event) => openSubmitWinnerConfirmation(match, event)}
               >
                 <p className="text-sm font-black text-ink-900">Who won the match?</p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -2008,6 +2048,35 @@ function ScheduledMatchesSection({
             setCancellationReasonError('');
           }}
           onSubmit={submitCancellationReason}
+        />
+      )}
+      {scheduledConfirmation && scheduledConfirmationMatch && (
+        <ActionConfirmationDialog
+          cancelLabel="Go Back"
+          confirmLabel={
+            scheduledConfirmation.type === 'accept-cancellation'
+              ? 'Accept Cancellation'
+              : scheduledConfirmation.type === 'keep-scheduled'
+              ? 'Keep Match Scheduled'
+              : 'Submit Winner'
+          }
+          message={
+            scheduledConfirmation.type === 'accept-cancellation'
+              ? 'Accept the cancellation request and cancel this match.'
+              : scheduledConfirmation.type === 'keep-scheduled'
+              ? 'Decline the cancellation request and keep this match scheduled.'
+              : `Submit this result and update the match record. Winner: ${scheduledConfirmationWinnerName}.`
+          }
+          title={
+            scheduledConfirmation.type === 'accept-cancellation'
+              ? 'Accept cancellation?'
+              : scheduledConfirmation.type === 'keep-scheduled'
+              ? 'Keep match scheduled?'
+              : 'Submit winner?'
+          }
+          tone={scheduledConfirmation.type === 'accept-cancellation' ? 'danger' : 'default'}
+          onCancel={closeScheduledConfirmation}
+          onConfirm={confirmScheduledAction}
         />
       )}
     </section>
@@ -2129,6 +2198,69 @@ function CancellationRequestDialog({
             </div>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ActionConfirmationDialog({
+  cancelLabel = 'Go Back',
+  confirmLabel,
+  message,
+  title,
+  tone = 'default',
+  onCancel,
+  onConfirm,
+}: {
+  cancelLabel?: string;
+  confirmLabel: string;
+  message: string;
+  title: string;
+  tone?: 'default' | 'danger';
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const confirmClass =
+    tone === 'danger'
+      ? 'bg-red-600 hover:bg-red-700'
+      : 'bg-court-500 hover:bg-court-700';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="action-confirmation-title"
+    >
+      <div className="w-full max-w-md rounded-2xl border border-line-200 bg-white p-5 shadow-2xl">
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-court-700">
+          Confirm Action
+        </p>
+        <h3
+          className="mt-2 text-xl font-black text-ink-900"
+          id="action-confirmation-title"
+        >
+          {title}
+        </h3>
+        <p className="mt-3 text-sm font-semibold leading-6 text-ink-700">
+          {message}
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
+            type="button"
+            onClick={onCancel}
+          >
+            {cancelLabel}
+          </button>
+          <button
+            className={`inline-flex items-center justify-center rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-sm transition ${confirmClass}`}
+            type="button"
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -3019,10 +3151,30 @@ function TimeProposalForm({
     index: number,
     nextDraft: Partial<TimeProposalDraft>,
   ) => void;
-  onPropose: (match: Match, event: FormEvent<HTMLFormElement>) => void;
+  onPropose: (match: Match) => void | Promise<void>;
 }) {
+  const [isConfirmingReplacement, setIsConfirmingReplacement] = useState(false);
+  const needsReplacementConfirmation =
+    match.proposed_match_options.length > 0 || match.status === 'scheduled';
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (needsReplacementConfirmation) {
+      setIsConfirmingReplacement(true);
+      return;
+    }
+
+    void onPropose(match);
+  }
+
+  async function confirmReplacement() {
+    setIsConfirmingReplacement(false);
+    await onPropose(match);
+  }
+
   return (
-    <form className="mt-4 rounded-2xl border border-line-200 bg-white p-4" onSubmit={(event) => onPropose(match, event)}>
+    <form className="mt-4 rounded-2xl border border-line-200 bg-white p-4" onSubmit={handleSubmit}>
       <div>
         <p className="text-sm font-bold text-ink-900">Propose up to 3 match times</p>
         <p className="mt-1 text-sm text-ink-700">
@@ -3079,6 +3231,16 @@ function TimeProposalForm({
           {actionId === match.id ? 'Saving...' : 'Send Options'}
         </button>
       </div>
+      {isConfirmingReplacement && (
+        <ActionConfirmationDialog
+          cancelLabel="Go Back"
+          confirmLabel="Replace Times"
+          message="Replace the previous proposed times with these new options?"
+          title="Replace proposed times?"
+          onCancel={() => setIsConfirmingReplacement(false)}
+          onConfirm={confirmReplacement}
+        />
+      )}
     </form>
   );
 }
@@ -3099,6 +3261,9 @@ function ChallengeCard({
   onProposalChange,
 }: ChallengeCardProps) {
   const [isRequestingNewTimes, setIsRequestingNewTimes] = useState(false);
+  const [pendingChallengeConfirmation, setPendingChallengeConfirmation] = useState<
+    'accept' | 'decline' | 'cancel' | null
+  >(null);
   const isChallenger = match.challenger_id === currentPlayer.id;
   const isOpponent = match.opponent_id === currentPlayer.id;
   const canManageTimeProposals = isChallenger || isOpponent;
@@ -3113,6 +3278,37 @@ function ChallengeCard({
   const hasProposedTimes = match.proposed_match_options.length > 0;
   const shouldShowProposalForm = !hasProposedTimes || isRequestingNewTimes;
   const needsAction = isMatchActionNeeded(match, currentPlayer);
+  const pendingChallengeTitle =
+    pendingChallengeConfirmation === 'accept'
+      ? 'Accept challenge?'
+      : pendingChallengeConfirmation === 'decline'
+        ? 'Decline challenge?'
+        : 'Cancel match?';
+  const pendingChallengeMessage =
+    pendingChallengeConfirmation === 'accept'
+      ? `Accept ${opponentName}'s challenge and start setting up a match time.`
+      : pendingChallengeConfirmation === 'decline'
+        ? `Decline ${opponentName}'s challenge? This match will leave your active challenges.`
+        : 'Cancel this match? This removes it from active challenges and scheduled matches.';
+
+  async function confirmChallengeAction() {
+    const nextAction = pendingChallengeConfirmation;
+    setPendingChallengeConfirmation(null);
+
+    if (nextAction === 'accept') {
+      await onAccept();
+      return;
+    }
+
+    if (nextAction === 'decline') {
+      await onDecline();
+      return;
+    }
+
+    if (nextAction === 'cancel') {
+      await onCancel();
+    }
+  }
 
   return (
     <article
@@ -3140,7 +3336,7 @@ function ChallengeCard({
           <button
             className="inline-flex items-center justify-center gap-2 rounded-full bg-court-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-court-700 disabled:cursor-not-allowed disabled:opacity-60"
             type="button"
-            onClick={onAccept}
+            onClick={() => setPendingChallengeConfirmation('accept')}
             disabled={actionId === match.id || hasOtherActiveMatch}
           >
             <CheckIcon />
@@ -3149,13 +3345,31 @@ function ChallengeCard({
           <button
             className="inline-flex items-center justify-center gap-2 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
             type="button"
-            onClick={onDecline}
+            onClick={() => setPendingChallengeConfirmation('decline')}
             disabled={actionId === match.id}
           >
             <XIcon />
             Decline
           </button>
         </div>
+      )}
+
+      {pendingChallengeConfirmation && (
+        <ActionConfirmationDialog
+          cancelLabel="Go Back"
+          confirmLabel={
+            pendingChallengeConfirmation === 'accept'
+              ? 'Accept Challenge'
+              : pendingChallengeConfirmation === 'decline'
+                ? 'Decline Challenge'
+                : 'Cancel Match'
+          }
+          message={pendingChallengeMessage}
+          title={pendingChallengeTitle}
+          tone={pendingChallengeConfirmation === 'accept' ? 'default' : 'danger'}
+          onCancel={() => setPendingChallengeConfirmation(null)}
+          onConfirm={confirmChallengeAction}
+        />
       )}
 
       {match.status === 'pending' && isOpponent && hasOtherActiveMatch && (
@@ -3211,7 +3425,7 @@ function ChallengeCard({
               match={match}
               proposalDrafts={proposalDrafts}
               onProposalChange={(_, index, nextDraft) => onProposalChange(index, nextDraft)}
-              onPropose={(_, event) => onPropose(event)}
+              onPropose={() => onPropose()}
             />
           )}
 
@@ -3236,7 +3450,7 @@ function ChallengeCard({
           <button
             className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-red-300 bg-white px-4 py-2.5 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             type="button"
-            onClick={onCancel}
+            onClick={() => setPendingChallengeConfirmation('cancel')}
             disabled={isCanceling || actionId === match.id}
           >
             <XIcon />
