@@ -1,3 +1,5 @@
+/// <reference path="../../test-node.d.ts" />
+
 import { deepEqual, equal } from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {

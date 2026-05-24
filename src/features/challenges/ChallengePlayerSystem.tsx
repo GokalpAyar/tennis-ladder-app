@@ -3108,17 +3108,23 @@ function PyramidLadder({
   }, [currentPlayer?.id, players.length]);
 
   useEffect(() => {
-    const content = pyramidContentRef.current;
+    const contentElement = pyramidContentRef.current;
 
-    if (!content) {
+    if (!contentElement) {
       return undefined;
     }
 
     function updatePyramidContentSize() {
+      const measuredContent = pyramidContentRef.current;
+
+      if (!measuredContent) {
+        return;
+      }
+
       setPyramidContentSize((current) => {
         const nextSize = {
-          height: content.offsetHeight,
-          width: content.offsetWidth,
+          height: measuredContent.offsetHeight,
+          width: measuredContent.offsetWidth,
         };
 
         if (current.height === nextSize.height && current.width === nextSize.width) {
@@ -3136,7 +3142,7 @@ function PyramidLadder({
     }
 
     const resizeObserver = new ResizeObserver(updatePyramidContentSize);
-    resizeObserver.observe(content);
+    resizeObserver.observe(contentElement);
 
     return () => resizeObserver.disconnect();
   }, [players.length, showActions]);
