@@ -526,23 +526,15 @@ function ChallengePlayerSystem({
     await loadChallengeData();
   }
 
-  async function requestCancellation(match: Match) {
+  async function requestCancellation(match: Match, reason: string) {
     if (!currentPlayer || match.status !== 'scheduled') {
       return;
     }
 
-    const reason = window.prompt('Please enter a short reason for requesting cancellation.')?.trim() ?? '';
+    const trimmedReason = reason.trim();
 
-    if (!reason) {
+    if (!trimmedReason) {
       setErrorMessage('Please enter a short reason before requesting cancellation.');
-      return;
-    }
-
-    const confirmed = window.confirm(
-      'Request cancellation for this scheduled match? Your opponent must accept before the match is canceled.',
-    );
-
-    if (!confirmed) {
       return;
     }
 
@@ -554,7 +546,7 @@ function ChallengePlayerSystem({
     const { data, error } = await supabase
       .from('matches')
       .update({
-        cancellation_reason: reason,
+        cancellation_reason: trimmedReason,
         cancellation_requested_at: new Date().toISOString(),
         cancellation_requested_by: currentPlayer.id,
         status: 'cancellation_requested',
@@ -585,7 +577,7 @@ function ChallengePlayerSystem({
     }
 
     await createMatchNotification({
-      message: `${currentPlayer.name} requested to cancel your scheduled match. Reason: ${reason}`,
+      message: `${currentPlayer.name} requested to cancel your scheduled match. Reason: ${trimmedReason}`,
       title: 'Cancellation requested',
       userId: getOtherPlayerId(match, currentPlayer.id),
     });
@@ -1685,7 +1677,7 @@ type ScheduledMatchesSectionProps = {
     nextDraft: Partial<TimeProposalDraft>,
   ) => void;
   onProposeTime: (match: Match, event: FormEvent<HTMLFormElement>) => void;
-  onRequestCancellation: (match: Match) => void;
+  onRequestCancellation: (match: Match, reason: string) => Promise<void>;
   onRequestReschedule: (match: Match) => void;
   onSubmitWinner: (match: Match, event: FormEvent<HTMLFormElement>) => void;
   onWinnerChange: (matchId: string, nextDraft: Partial<WinnerDraft>) => void;
@@ -1712,9 +1704,73 @@ function ScheduledMatchesSection({
   onSubmitWinner,
   onWinnerChange,
 }: ScheduledMatchesSectionProps) {
+  const [cancellationRequest, setCancellationRequest] = useState<{
+    matchId: string;
+    step: 'confirm' | 'reason';
+  } | null>(null);
+  const [cancellationReason, setCancellationReason] = useState('');
+  const [cancellationReasonError, setCancellationReasonError] = useState('');
   const hasScheduledActionNeeded = matches.some((match) =>
     isMatchActionNeeded(match, currentPlayer),
   );
+  const cancellationMatch = cancellationRequest
+    ? matches.find((match) => match.id === cancellationRequest.matchId) ?? null
+    : null;
+
+  useEffect(() => {
+    if (!cancellationRequest) {
+      return;
+    }
+
+    const latestMatch = matches.find((match) => match.id === cancellationRequest.matchId);
+
+    if (!latestMatch || latestMatch.status !== 'scheduled') {
+      closeCancellationRequest();
+    }
+  }, [cancellationRequest, matches]);
+
+  function openCancellationRequest(match: Match) {
+    setCancellationRequest({ matchId: match.id, step: 'confirm' });
+    setCancellationReason('');
+    setCancellationReasonError('');
+  }
+
+  function closeCancellationRequest() {
+    setCancellationRequest(null);
+    setCancellationReason('');
+    setCancellationReasonError('');
+  }
+
+  function showCancellationReasonForm() {
+    if (!cancellationRequest) {
+      return;
+    }
+
+    setCancellationRequest({
+      matchId: cancellationRequest.matchId,
+      step: 'reason',
+    });
+    setCancellationReasonError('');
+  }
+
+  async function submitCancellationReason(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!cancellationMatch) {
+      closeCancellationRequest();
+      return;
+    }
+
+    const trimmedReason = cancellationReason.trim();
+
+    if (!trimmedReason) {
+      setCancellationReasonError('Enter a short reason before requesting cancellation.');
+      return;
+    }
+
+    await onRequestCancellation(cancellationMatch, trimmedReason);
+    closeCancellationRequest();
+  }
 
   return (
     <section
@@ -1919,7 +1975,7 @@ function ScheduledMatchesSection({
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-full border border-red-300 bg-white px-4 py-2.5 text-sm font-bold text-red-700 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                   type="button"
-                  onClick={() => onRequestCancellation(match)}
+                  onClick={() => openCancellationRequest(match)}
                   disabled={cancelingMatchId === match.id || actionId === match.id}
                 >
                   <XIcon />
@@ -1935,7 +1991,146 @@ function ScheduledMatchesSection({
           ))}
         </div>
       )}
+      {cancellationRequest && cancellationMatch && (
+        <CancellationRequestDialog
+          actionId={actionId}
+          cancelingMatchId={cancelingMatchId}
+          currentPlayer={currentPlayer}
+          errorMessage={cancellationReasonError}
+          match={cancellationMatch}
+          playersById={playersById}
+          reason={cancellationReason}
+          step={cancellationRequest.step}
+          onCancel={closeCancellationRequest}
+          onConfirm={showCancellationReasonForm}
+          onReasonChange={(value) => {
+            setCancellationReason(value);
+            setCancellationReasonError('');
+          }}
+          onSubmit={submitCancellationReason}
+        />
+      )}
     </section>
+  );
+}
+
+function CancellationRequestDialog({
+  actionId,
+  cancelingMatchId,
+  currentPlayer,
+  errorMessage,
+  match,
+  playersById,
+  reason,
+  step,
+  onCancel,
+  onConfirm,
+  onReasonChange,
+  onSubmit,
+}: {
+  actionId: string | null;
+  cancelingMatchId: string | null;
+  currentPlayer: RankedPlayer;
+  errorMessage: string;
+  match: Match;
+  playersById: Map<string, RankedPlayer>;
+  reason: string;
+  step: 'confirm' | 'reason';
+  onCancel: () => void;
+  onConfirm: () => void;
+  onReasonChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const isSubmitting = cancelingMatchId === match.id || actionId === match.id;
+  const opponentName = getOpponentName(match, currentPlayer, playersById);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cancellation-request-title"
+    >
+      <div className="w-full max-w-md rounded-2xl border border-line-200 bg-white p-5 shadow-2xl">
+        {step === 'confirm' ? (
+          <>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-red-700">
+              Request Cancellation
+            </p>
+            <h3
+              className="mt-2 text-xl font-black text-ink-900"
+              id="cancellation-request-title"
+            >
+              Ask to cancel this match?
+            </h3>
+            <p className="mt-3 text-sm font-semibold leading-6 text-ink-700">
+              Your match with {opponentName} will stay scheduled unless the other
+              player accepts the request.
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50"
+                type="button"
+                onClick={onCancel}
+              >
+                No, Keep Match
+              </button>
+              <button
+                className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-red-700"
+                type="button"
+                onClick={onConfirm}
+              >
+                Yes, Continue
+              </button>
+            </div>
+          </>
+        ) : (
+          <form onSubmit={onSubmit}>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-red-700">
+              Cancellation Reason
+            </p>
+            <h3
+              className="mt-2 text-xl font-black text-ink-900"
+              id="cancellation-request-title"
+            >
+              Add a short reason
+            </h3>
+            <label className="mt-4 block">
+              <span className="text-sm font-bold text-ink-700">Reason</span>
+              <textarea
+                className="mt-2 min-h-24 w-full rounded-xl border border-line-200 bg-white px-3 py-2 text-sm font-semibold text-ink-900 outline-none transition focus:border-court-500 focus:ring-2 focus:ring-court-100"
+                value={reason}
+                maxLength={240}
+                onChange={(event) => onReasonChange(event.target.value)}
+                placeholder="Example: I have a schedule conflict."
+              />
+            </label>
+            {errorMessage && (
+              <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+                {errorMessage}
+              </p>
+            )}
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                className="inline-flex items-center justify-center rounded-full border border-line-200 bg-white px-4 py-2.5 text-sm font-bold text-court-900 shadow-sm transition hover:border-court-500 hover:bg-court-50 disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                onClick={onCancel}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                type="submit"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Sending...' : 'Send Request'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
   );
 }
 
