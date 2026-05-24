@@ -384,7 +384,8 @@ begin
   temp_offset := greatest(10000, max_rank + ranking_count + 10000);
 
   update public.ladder_rankings
-  set rank_position = coalesce(rank_position, 0) + temp_offset;
+  set rank_position = coalesce(rank_position, 0) + temp_offset
+  where true;
 
   with normalized as (
     select
