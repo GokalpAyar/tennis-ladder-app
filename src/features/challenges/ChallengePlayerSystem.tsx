@@ -88,6 +88,7 @@ const CANCELABLE_MATCH_STATUSES: MatchStatus[] = [
 ];
 const ACTIVE_MATCH_MESSAGE =
   'You already have an active match. Complete or cancel it before starting another.';
+const STALE_MATCH_MESSAGE = 'This match was already updated. Please refresh and try again.';
 
 function ChallengePlayerSystem({
   userId,
@@ -335,12 +336,24 @@ function ChallengePlayerSystem({
     setMessage('');
     setErrorMessage('');
 
-    const { error } = await supabase.from('matches').update({ status }).eq('id', matchId);
+    const { data, error } = await supabase
+      .from('matches')
+      .update({ status })
+      .eq('id', matchId)
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle();
 
     setActionId(null);
 
     if (error) {
       setErrorMessage(error.message);
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage(STALE_MATCH_MESSAGE);
+      await loadChallengeData();
       return;
     }
 
@@ -394,15 +407,33 @@ function ChallengePlayerSystem({
         : {}),
     };
 
-    const { error } = await supabase
-      .from('matches')
-      .update(matchUpdate)
-      .eq('id', match.id);
+    const guardedUpdate =
+      match.status === 'scheduled'
+        ? supabase
+            .from('matches')
+            .update(matchUpdate)
+            .eq('id', match.id)
+            .eq('status', 'scheduled')
+            .eq('reschedule_requested_by', match.reschedule_requested_by ?? '')
+            .not('reschedule_approved_at', 'is', null)
+        : supabase
+            .from('matches')
+            .update(matchUpdate)
+            .eq('id', match.id)
+            .eq('status', match.status);
+
+    const { data, error } = await guardedUpdate.select('id').maybeSingle();
 
     setActionId(null);
 
     if (error) {
       setErrorMessage(error.message);
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage(STALE_MATCH_MESSAGE);
+      await loadChallengeData();
       return;
     }
 
@@ -448,7 +479,7 @@ function ChallengePlayerSystem({
       return;
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('matches')
       .update({
         status: 'scheduled',
@@ -457,12 +488,22 @@ function ChallengePlayerSystem({
         challenger_agreed_at: new Date().toISOString(),
         opponent_agreed_at: new Date().toISOString(),
       })
-      .eq('id', match.id);
+      .eq('id', match.id)
+      .eq('status', 'time_proposed')
+      .eq('proposed_by_player_id', match.proposed_by_player_id ?? '')
+      .select('id')
+      .maybeSingle();
 
     setActionId(null);
 
     if (error) {
       setErrorMessage(error.message);
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage(STALE_MATCH_MESSAGE);
+      await loadChallengeData();
       return;
     }
 
@@ -534,6 +575,7 @@ function ChallengePlayerSystem({
         cancellation_requested_by: null,
       })
       .eq('id', match.id)
+      .in('status', CANCELABLE_MATCH_STATUSES)
       .select('id')
       .maybeSingle();
 
@@ -552,7 +594,7 @@ function ChallengePlayerSystem({
     }
 
     if (!data) {
-      setErrorMessage('This match could not be canceled because its status changed.');
+      setErrorMessage(STALE_MATCH_MESSAGE);
       await loadChallengeData();
       return;
     }
@@ -606,7 +648,7 @@ function ChallengePlayerSystem({
     }
 
     if (!data) {
-      setErrorMessage('Cancellation could not be requested because this match changed.');
+      setErrorMessage(STALE_MATCH_MESSAGE);
       await loadChallengeData();
       return;
     }
@@ -653,6 +695,7 @@ function ChallengePlayerSystem({
       })
       .eq('id', match.id)
       .eq('status', 'cancellation_requested')
+      .eq('cancellation_requested_by', requesterId)
       .select('id')
       .maybeSingle();
 
@@ -671,7 +714,7 @@ function ChallengePlayerSystem({
     }
 
     if (!data) {
-      setErrorMessage('Cancellation could not be accepted because this match changed.');
+      setErrorMessage(STALE_MATCH_MESSAGE);
       await loadChallengeData();
       return;
     }
@@ -717,6 +760,7 @@ function ChallengePlayerSystem({
       })
       .eq('id', match.id)
       .eq('status', 'cancellation_requested')
+      .eq('cancellation_requested_by', requesterId)
       .select('id')
       .maybeSingle();
 
@@ -734,7 +778,7 @@ function ChallengePlayerSystem({
     }
 
     if (!data) {
-      setErrorMessage('The match could not be kept scheduled because it changed.');
+      setErrorMessage(STALE_MATCH_MESSAGE);
       await loadChallengeData();
       return;
     }
@@ -776,6 +820,7 @@ function ChallengePlayerSystem({
       })
       .eq('id', match.id)
       .eq('status', 'scheduled')
+      .is('reschedule_requested_by', null)
       .select('id')
       .maybeSingle();
 
@@ -787,7 +832,7 @@ function ChallengePlayerSystem({
     }
 
     if (!data) {
-      setErrorMessage('Reschedule could not be requested because this match changed.');
+      setErrorMessage(STALE_MATCH_MESSAGE);
       await loadChallengeData();
       return;
     }
@@ -823,6 +868,8 @@ function ChallengePlayerSystem({
       })
       .eq('id', match.id)
       .eq('status', 'scheduled')
+      .eq('reschedule_requested_by', match.reschedule_requested_by)
+      .is('reschedule_approved_at', null)
       .select('id')
       .maybeSingle();
 
@@ -834,7 +881,7 @@ function ChallengePlayerSystem({
     }
 
     if (!data) {
-      setErrorMessage('Reschedule could not be accepted because this match changed.');
+      setErrorMessage(STALE_MATCH_MESSAGE);
       await loadChallengeData();
       return;
     }
@@ -873,6 +920,8 @@ function ChallengePlayerSystem({
       })
       .eq('id', match.id)
       .eq('status', 'scheduled')
+      .eq('reschedule_requested_by', match.reschedule_requested_by)
+      .is('reschedule_approved_at', null)
       .select('id')
       .maybeSingle();
 
@@ -884,7 +933,7 @@ function ChallengePlayerSystem({
     }
 
     if (!data) {
-      setErrorMessage('The match could not be kept scheduled because it changed.');
+      setErrorMessage(STALE_MATCH_MESSAGE);
       await loadChallengeData();
       return;
     }
@@ -952,6 +1001,8 @@ function ChallengePlayerSystem({
       .from('matches')
       .update(getWinnerSubmissionUpdate(winnerDraft.winnerId))
       .eq('id', match.id)
+      .eq('status', 'scheduled')
+      .is('winner_id', null)
       .select('id, winner_id, status, stats_recorded, ranking_updated')
       .maybeSingle();
 
@@ -970,7 +1021,7 @@ function ChallengePlayerSystem({
     }
 
     if (!data) {
-      setErrorMessage('Winner could not be submitted because the match was not found.');
+      setErrorMessage(STALE_MATCH_MESSAGE);
       await loadChallengeData();
       return;
     }

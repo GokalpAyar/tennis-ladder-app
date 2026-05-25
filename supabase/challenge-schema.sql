@@ -260,6 +260,48 @@ before insert or update of status, challenger_id, opponent_id, proposed_match_at
 for each row
 execute function public.enforce_no_overlapping_scheduled_matches();
 
+create or replace function public.enforce_match_hardening_rules()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.status = 'completed'
+    and coalesce(old.stats_recorded, false)
+    and to_jsonb(new) is distinct from to_jsonb(old)
+  then
+    raise exception 'Completed matches with recorded stats cannot be modified.';
+  end if;
+
+  if old.status = 'cancellation_requested'
+    and new.status = 'canceled'
+    and old.cancellation_requested_by is not null
+    and auth.uid() = old.cancellation_requested_by
+  then
+    raise exception 'The player who requested cancellation cannot approve their own request.';
+  end if;
+
+  if old.status = 'scheduled'
+    and old.reschedule_requested_by is not null
+    and old.reschedule_approved_at is null
+    and new.reschedule_approved_at is not null
+    and auth.uid() = old.reschedule_requested_by
+  then
+    raise exception 'The player who requested a new time cannot approve their own request.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_match_hardening_rules on public.matches;
+
+create trigger enforce_match_hardening_rules
+before update on public.matches
+for each row
+execute function public.enforce_match_hardening_rules();
+
 create or replace function public.record_completed_match_stats()
 returns trigger
 language plpgsql

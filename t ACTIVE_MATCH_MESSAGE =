@@ -1,0 +1,352 @@
+[1mdiff --git a/src/features/challenges/ChallengePlayerSystem.tsx b/src/features/challenges/ChallengePlayerSystem.tsx[m
+[1mindex 12c2942..e8de6cc 100644[m
+[1m--- a/src/features/challenges/ChallengePlayerSystem.tsx[m
+[1m+++ b/src/features/challenges/ChallengePlayerSystem.tsx[m
+[36m@@ -88,6 +88,7 @@[m [mconst CANCELABLE_MATCH_STATUSES: MatchStatus[] = [[m
+ ];[m
+ const ACTIVE_MATCH_MESSAGE =[m
+   'You already have an active match. Complete or cancel it before starting another.';[m
+[32m+[m[32mconst STALE_MATCH_MESSAGE = 'This match was already updated. Please refresh and try again.';[m
+ [m
+ function ChallengePlayerSystem({[m
+   userId,[m
+[36m@@ -335,7 +336,13 @@[m [mfunction ChallengePlayerSystem({[m
+     setMessage('');[m
+     setErrorMessage('');[m
+ [m
+[31m-    const { error } = await supabase.from('matches').update({ status }).eq('id', matchId);[m
+[32m+[m[32m    const { data, error } = await supabase[m
+[32m+[m[32m      .from('matches')[m
+[32m+[m[32m      .update({ status })[m
+[32m+[m[32m      .eq('id', matchId)[m
+[32m+[m[32m      .eq('status', 'pending')[m
+[32m+[m[32m      .select('id')[m
+[32m+[m[32m      .maybeSingle();[m
+ [m
+     setActionId(null);[m
+ [m
+[36m@@ -344,6 +351,12 @@[m [mfunction ChallengePlayerSystem({[m
+       return;[m
+     }[m
+ [m
+[32m+[m[32m    if (!data) {[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+[32m+[m[32m      await loadChallengeData();[m
+[32m+[m[32m      return;[m
+[32m+[m[32m    }[m
+[32m+[m
+     setMessage(status === 'accepted' ? 'Challenge accepted.' : 'Challenge declined.');[m
+     await loadChallengeData();[m
+   }[m
+[36m@@ -394,10 +407,22 @@[m [mfunction ChallengePlayerSystem({[m
+         : {}),[m
+     };[m
+ [m
+[31m-    const { error } = await supabase[m
+[31m-      .from('matches')[m
+[31m-      .update(matchUpdate)[m
+[31m-      .eq('id', match.id);[m
+[32m+[m[32m    const guardedUpdate =[m
+[32m+[m[32m      match.status === 'scheduled'[m
+[32m+[m[32m        ? supabase[m
+[32m+[m[32m            .from('matches')[m
+[32m+[m[32m            .update(matchUpdate)[m
+[32m+[m[32m            .eq('id', match.id)[m
+[32m+[m[32m            .eq('status', 'scheduled')[m
+[32m+[m[32m            .eq('reschedule_requested_by', match.reschedule_requested_by ?? '')[m
+[32m+[m[32m            .not('reschedule_approved_at', 'is', null)[m
+[32m+[m[32m        : supabase[m
+[32m+[m[32m            .from('matches')[m
+[32m+[m[32m            .update(matchUpdate)[m
+[32m+[m[32m            .eq('id', match.id)[m
+[32m+[m[32m            .eq('status', match.status);[m
+[32m+[m
+[32m+[m[32m    const { data, error } = await guardedUpdate.select('id').maybeSingle();[m
+ [m
+     setActionId(null);[m
+ [m
+[36m@@ -406,6 +431,12 @@[m [mfunction ChallengePlayerSystem({[m
+       return;[m
+     }[m
+ [m
+[32m+[m[32m    if (!data) {[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+[32m+[m[32m      await loadChallengeData();[m
+[32m+[m[32m      return;[m
+[32m+[m[32m    }[m
+[32m+[m
+     setReschedulingMatchIds((current) => {[m
+       const next = new Set(current);[m
+       next.delete(match.id);[m
+[36m@@ -448,7 +479,7 @@[m [mfunction ChallengePlayerSystem({[m
+       return;[m
+     }[m
+ [m
+[31m-    const { error } = await supabase[m
+[32m+[m[32m    const { data, error } = await supabase[m
+       .from('matches')[m
+       .update({[m
+         status: 'scheduled',[m
+[36m@@ -457,7 +488,11 @@[m [mfunction ChallengePlayerSystem({[m
+         challenger_agreed_at: new Date().toISOString(),[m
+         opponent_agreed_at: new Date().toISOString(),[m
+       })[m
+[31m-      .eq('id', match.id);[m
+[32m+[m[32m      .eq('id', match.id)[m
+[32m+[m[32m      .eq('status', 'time_proposed')[m
+[32m+[m[32m      .eq('proposed_by_player_id', match.proposed_by_player_id ?? '')[m
+[32m+[m[32m      .select('id')[m
+[32m+[m[32m      .maybeSingle();[m
+ [m
+     setActionId(null);[m
+ [m
+[36m@@ -466,6 +501,12 @@[m [mfunction ChallengePlayerSystem({[m
+       return;[m
+     }[m
+ [m
+[32m+[m[32m    if (!data) {[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+[32m+[m[32m      await loadChallengeData();[m
+[32m+[m[32m      return;[m
+[32m+[m[32m    }[m
+[32m+[m
+     setMessage('Match scheduled. Please call the tennis office to reserve the court.');[m
+     await loadChallengeData();[m
+   }[m
+[36m@@ -534,6 +575,7 @@[m [mfunction ChallengePlayerSystem({[m
+         cancellation_requested_by: null,[m
+       })[m
+       .eq('id', match.id)[m
+[32m+[m[32m      .in('status', CANCELABLE_MATCH_STATUSES)[m
+       .select('id')[m
+       .maybeSingle();[m
+ [m
+[36m@@ -552,7 +594,7 @@[m [mfunction ChallengePlayerSystem({[m
+     }[m
+ [m
+     if (!data) {[m
+[31m-      setErrorMessage('This match could not be canceled because its status changed.');[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+       await loadChallengeData();[m
+       return;[m
+     }[m
+[36m@@ -606,7 +648,7 @@[m [mfunction ChallengePlayerSystem({[m
+     }[m
+ [m
+     if (!data) {[m
+[31m-      setErrorMessage('Cancellation could not be requested because this match changed.');[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+       await loadChallengeData();[m
+       return;[m
+     }[m
+[36m@@ -653,6 +695,7 @@[m [mfunction ChallengePlayerSystem({[m
+       })[m
+       .eq('id', match.id)[m
+       .eq('status', 'cancellation_requested')[m
+[32m+[m[32m      .eq('cancellation_requested_by', requesterId)[m
+       .select('id')[m
+       .maybeSingle();[m
+ [m
+[36m@@ -671,7 +714,7 @@[m [mfunction ChallengePlayerSystem({[m
+     }[m
+ [m
+     if (!data) {[m
+[31m-      setErrorMessage('Cancellation could not be accepted because this match changed.');[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+       await loadChallengeData();[m
+       return;[m
+     }[m
+[36m@@ -717,6 +760,7 @@[m [mfunction ChallengePlayerSystem({[m
+       })[m
+       .eq('id', match.id)[m
+       .eq('status', 'cancellation_requested')[m
+[32m+[m[32m      .eq('cancellation_requested_by', requesterId)[m
+       .select('id')[m
+       .maybeSingle();[m
+ [m
+[36m@@ -734,7 +778,7 @@[m [mfunction ChallengePlayerSystem({[m
+     }[m
+ [m
+     if (!data) {[m
+[31m-      setErrorMessage('The match could not be kept scheduled because it changed.');[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+       await loadChallengeData();[m
+       return;[m
+     }[m
+[36m@@ -776,6 +820,7 @@[m [mfunction ChallengePlayerSystem({[m
+       })[m
+       .eq('id', match.id)[m
+       .eq('status', 'scheduled')[m
+[32m+[m[32m      .is('reschedule_requested_by', null)[m
+       .select('id')[m
+       .maybeSingle();[m
+ [m
+[36m@@ -787,7 +832,7 @@[m [mfunction ChallengePlayerSystem({[m
+     }[m
+ [m
+     if (!data) {[m
+[31m-      setErrorMessage('Reschedule could not be requested because this match changed.');[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+       await loadChallengeData();[m
+       return;[m
+     }[m
+[36m@@ -823,6 +868,8 @@[m [mfunction ChallengePlayerSystem({[m
+       })[m
+       .eq('id', match.id)[m
+       .eq('status', 'scheduled')[m
+[32m+[m[32m      .eq('reschedule_requested_by', match.reschedule_requested_by)[m
+[32m+[m[32m      .is('reschedule_approved_at', null)[m
+       .select('id')[m
+       .maybeSingle();[m
+ [m
+[36m@@ -834,7 +881,7 @@[m [mfunction ChallengePlayerSystem({[m
+     }[m
+ [m
+     if (!data) {[m
+[31m-      setErrorMessage('Reschedule could not be accepted because this match changed.');[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+       await loadChallengeData();[m
+       return;[m
+     }[m
+[36m@@ -873,6 +920,8 @@[m [mfunction ChallengePlayerSystem({[m
+       })[m
+       .eq('id', match.id)[m
+       .eq('status', 'scheduled')[m
+[32m+[m[32m      .eq('reschedule_requested_by', match.reschedule_requested_by)[m
+[32m+[m[32m      .is('reschedule_approved_at', null)[m
+       .select('id')[m
+       .maybeSingle();[m
+ [m
+[36m@@ -884,7 +933,7 @@[m [mfunction ChallengePlayerSystem({[m
+     }[m
+ [m
+     if (!data) {[m
+[31m-      setErrorMessage('The match could not be kept scheduled because it changed.');[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+       await loadChallengeData();[m
+       return;[m
+     }[m
+[36m@@ -952,6 +1001,8 @@[m [mfunction ChallengePlayerSystem({[m
+       .from('matches')[m
+       .update(getWinnerSubmissionUpdate(winnerDraft.winnerId))[m
+       .eq('id', match.id)[m
+[32m+[m[32m      .eq('status', 'scheduled')[m
+[32m+[m[32m      .is('winner_id', null)[m
+       .select('id, winner_id, status, stats_recorded, ranking_updated')[m
+       .maybeSingle();[m
+ [m
+[36m@@ -970,7 +1021,7 @@[m [mfunction ChallengePlayerSystem({[m
+     }[m
+ [m
+     if (!data) {[m
+[31m-      setErrorMessage('Winner could not be submitted because the match was not found.');[m
+[32m+[m[32m      setErrorMessage(STALE_MATCH_MESSAGE);[m
+       await loadChallengeData();[m
+       return;[m
+     }[m
+[1mdiff --git a/supabase/admin-schema.sql b/supabase/admin-schema.sql[m
+[1mindex 5d62965..0f443d6 100644[m
+[1m--- a/supabase/admin-schema.sql[m
+[1m+++ b/supabase/admin-schema.sql[m
+[36m@@ -298,6 +298,48 @@[m [mbefore insert or update of status, challenger_id, opponent_id, proposed_match_at[m
+ for each row[m
+ execute function public.enforce_no_overlapping_scheduled_matches();[m
+ [m
+[32m+[m[32mcreate or replace function public.enforce_match_hardening_rules()[m
+[32m+[m[32mreturns trigger[m
+[32m+[m[32mlanguage plpgsql[m
+[32m+[m[32msecurity definer[m
+[32m+[m[32mset search_path = public[m
+[32m+[m[32mas $$[m
+[32m+[m[32mbegin[m
+[32m+[m[32m  if old.status = 'completed'[m
+[32m+[m[32m    and coalesce(old.stats_recorded, false)[m
+[32m+[m[32m    and to_jsonb(new) is distinct from to_jsonb(old)[m
+[32m+[m[32m  then[m
+[32m+[m[32m    raise exception 'Completed matches with recorded stats cannot be modified.';[m
+[32m+[m[32m  end if;[m
+[32m+[m
+[32m+[m[32m  if old.status = 'cancellation_requested'[m
+[32m+[m[32m    and new.status = 'canceled'[m
+[32m+[m[32m    and old.cancellation_requested_by is not null[m
+[32m+[m[32m    and auth.uid() = old.cancellation_requested_by[m
+[32m+[m[32m  then[m
+[32m+[m[32m    raise exception 'The player who requested cancellation cannot approve their own request.';[m
+[32m+[m[32m  end if;[m
+[32m+[m
+[32m+[m[32m  if old.status = 'scheduled'[m
+[32m+[m[32m    and old.reschedule_requested_by is not null[m
+[32m+[m[32m    and old.reschedule_approved_at is null[m
+[32m+[m[32m    and new.reschedule_approved_at is not null[m
+[32m+[m[32m    and auth.uid() = old.reschedule_requested_by[m
+[32m+[m[32m  then[m
+[32m+[m[32m    raise exception 'The player who requested a new time cannot approve their own request.';[m
+[32m+[m[32m  end if;[m
+[32m+[m
+[32m+[m[32m  return new;[m
+[32m+[m[32mend;[m
+[32m+[m[32m$$;[m
+[32m+[m
+[32m+[m[32mdrop trigger if exists enforce_match_hardening_rules on public.matches;[m
+[32m+[m
+[32m+[m[32mcreate trigger enforce_match_hardening_rules[m
+[32m+[m[32mbefore update on public.matches[m
+[32m+[m[32mfor each row[m
+[32m+[m[32mexecute function public.enforce_match_hardening_rules();[m
+[32m+[m
+ create or replace function public.is_admin(user_id uuid default auth.uid())[m
+ returns boolean[m
+ language sql[m
+[1mdiff --git a/supabase/challenge-schema.sql b/supabase/challenge-schema.sql[m
+[1mindex 880cba3..9c3fbc2 100644[m
+[1m--- a/supabase/challenge-schema.sql[m
+[1m+++ b/supabase/challenge-schema.sql[m
+[36m@@ -260,6 +260,48 @@[m [mbefore insert or update of status, challenger_id, opponent_id, proposed_match_at[m
+ for each row[m
+ execute function public.enforce_no_overlapping_scheduled_matches();[m
+ [m
+[32m+[m[32mcreate or replace function public.enforce_match_hardening_rules()[m
+[32m+[m[32mreturns trigger[m
+[32m+[m[32mlanguage plpgsql[m
+[32m+[m[32msecurity definer[m
+[32m+[m[32mset search_path = public[m
+[32m+[m[32mas $$[m
+[32m+[m[32mbegin[m
+[32m+[m[32m  if old.status = 'completed'[m
+[32m+[m[32m    and coalesce(old.stats_recorded, false)[m
+[32m+[m[32m    and to_jsonb(new) is distinct from to_jsonb(old)[m
+[32m+[m[32m  then[m
+[32m+[m[32m    raise exception 'Completed matches with recorded stats cannot be modified.';[m
+[32m+[m[32m  end if;[m
+[32m+[m
+[32m+[m[32m  if old.status = 'cancellation_requested'[m
+[32m+[m[32m    and new.status = 'canceled'[m
+[32m+[m[32m    and old.cancellation_requested_by is not null[m
+[32m+[m[32m    and auth.uid() = old.cancellation_requested_by[m
+[32m+[m[32m  then[m
+[32m+[m[32m    raise exception 'The player who requested cancellation cannot approve their own request.';[m
+[32m+[m[32m  end if;[m
+[32m+[m
+[32m+[m[32m  if old.status = 'scheduled'[m
+[32m+[m[32m    and old.reschedule_requested_by is not null[m
+[32m+[m[32m    and old.reschedule_approved_at is null[m
+[32m+[m[32m    and new.reschedule_approved_at is not null[m
+[32m+[m[32m    and auth.uid() = old.reschedule_requested_by[m
+[32m+[m[32m  then[m
+[32m+[m[32m    raise exception 'The player who requested a new time cannot approve their own request.';[m
+[32m+[m[32m  end if;[m
+[32m+[m
+[32m+[m[32m  return new;[m
+[32m+[m[32mend;[m
+[32m+[m[32m$$;[m
+[32m+[m
+[32m+[m[32mdrop trigger if exists enforce_match_hardening_rules on public.matches;[m
+[32m+[m
+[32m+[m[32mcreate trigger enforce_match_hardening_rules[m
+[32m+[m[32mbefore update on public.matches[m
+[32m+[m[32mfor each row[m
+[32m+[m[32mexecute function public.enforce_match_hardening_rules();[m
+[32m+[m
+ create or replace function public.record_completed_match_stats()[m
+ returns trigger[m
+ language plpgsql[m
