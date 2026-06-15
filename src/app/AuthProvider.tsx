@@ -8,9 +8,18 @@ import {
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import {
+  getDefaultRouteForPortal,
+  getPortalPreferenceFromSession,
+  hasLadderPortalAccess,
+  type PortalPreference,
+} from './portalAccess';
 
 type AuthContextValue = {
+  defaultRoute: string;
+  hasLadderAccess: boolean;
   isLoading: boolean;
+  portalPreference: PortalPreference;
   profileStatus: 'pending' | 'approved';
   role: 'player' | 'admin';
   session: Session | null;
@@ -20,52 +29,52 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [portalPreference, setPortalPreference] = useState<PortalPreference>('ladder');
   const [profileStatus, setProfileStatus] = useState<'pending' | 'approved'>('approved');
   const [role, setRole] = useState<'player' | 'admin'>('player');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
+    let loadSequence = 0;
+
+    async function applySession(nextSession: Session | null) {
+      const currentSequence = loadSequence + 1;
+      loadSequence = currentSequence;
+
+      if (isMounted) {
+        setIsLoading(true);
+      }
+
+      const nextPortalPreference = getPortalPreferenceFromSession(nextSession);
+      const profile = await loadProfile(nextSession);
+
+      if (!isMounted || currentSequence !== loadSequence) {
+        return;
+      }
+
+      setSession(nextSession);
+      setPortalPreference(nextPortalPreference);
+      setRole(profile.role);
+      setProfileStatus(profile.status);
+      setIsLoading(false);
+    }
 
     async function loadSession() {
       try {
         const { data } = await supabase.auth.getSession();
-
-        if (!isMounted) {
-          return;
-        }
-
-        setSession(data.session);
-        setIsLoading(false);
-        loadProfile(data.session).then((profile) => {
-          if (isMounted) {
-            setRole(profile.role);
-            setProfileStatus(profile.status);
-          }
-        });
+        await applySession(data.session);
       } catch {
-        if (isMounted) {
-          setSession(null);
-          setProfileStatus('approved');
-          setRole('player');
-          setIsLoading(false);
-        }
+        await applySession(null);
       }
     }
 
-    loadSession();
+    void loadSession();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setIsLoading(false);
-      loadProfile(nextSession).then((profile) => {
-        if (isMounted) {
-          setRole(profile.role);
-          setProfileStatus(profile.status);
-        }
-      });
+      void applySession(nextSession);
     });
 
     return () => {
@@ -74,14 +83,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const hasLadderAccess = hasLadderPortalAccess(portalPreference, role);
+  const defaultRoute = getDefaultRouteForPortal(hasLadderAccess ? 'ladder' : 'tournament');
+
   const value = useMemo(
     () => ({
+      defaultRoute,
+      hasLadderAccess,
       isLoading,
+      portalPreference,
       profileStatus,
       role,
       session,
     }),
-    [isLoading, profileStatus, role, session],
+    [defaultRoute, hasLadderAccess, isLoading, portalPreference, profileStatus, role, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

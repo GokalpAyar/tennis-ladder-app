@@ -10,16 +10,27 @@ import LadderPage from '../pages/LadderPage';
 import LoginPage from '../pages/LoginPage';
 import ResetPasswordPage from '../pages/ResetPasswordPage';
 import SignUpPage from '../pages/SignUpPage';
+import TournamentsPage from '../pages/TournamentsPage';
+
+function LandingRedirect() {
+  const { defaultRoute, isLoading, session } = useAuth();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  return <Navigate to={session ? defaultRoute : '/login'} replace />;
+}
 
 function PublicRoute({ children }: { children: ReactNode }) {
-  const { isLoading, session } = useAuth();
+  const { defaultRoute, isLoading, session } = useAuth();
 
   if (isLoading) {
     return <LoadingScreen />;
   }
 
   if (session) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={defaultRoute} replace />;
   }
 
   return children;
@@ -34,6 +45,24 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (!session) {
     return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
+
+function LadderRoute({ children }: { children: ReactNode }) {
+  const { hasLadderAccess, isLoading, session } = useAuth();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  if (!session) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!hasLadderAccess) {
+    return <Navigate to="/tournaments" replace />;
   }
 
   return children;
@@ -70,7 +99,7 @@ function LoadingScreen() {
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/" element={<LandingRedirect />} />
       <Route
         path="/login"
         element={
@@ -92,32 +121,48 @@ function App() {
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute>
+          <LadderRoute>
             <DashboardPage />
-          </ProtectedRoute>
+          </LadderRoute>
         }
       />
       <Route
         path="/account"
         element={
-          <ProtectedRoute>
+          <LadderRoute>
             <AccountPage />
-          </ProtectedRoute>
+          </LadderRoute>
         }
       />
       <Route
         path="/activities"
         element={
-          <ProtectedRoute>
+          <LadderRoute>
             <ActivitiesPage />
-          </ProtectedRoute>
+          </LadderRoute>
         }
       />
       <Route
         path="/court-info"
         element={
-          <ProtectedRoute>
+          <LadderRoute>
             <CourtInfoPage />
+          </LadderRoute>
+        }
+      />
+      <Route
+        path="/tournaments"
+        element={
+          <ProtectedRoute>
+            <TournamentsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/tournaments/:categoryId"
+        element={
+          <ProtectedRoute>
+            <TournamentsPage />
           </ProtectedRoute>
         }
       />
@@ -132,12 +177,12 @@ function App() {
       <Route
         path="/ladder"
         element={
-          <ProtectedRoute>
+          <LadderRoute>
             <LadderPage />
-          </ProtectedRoute>
+          </LadderRoute>
         }
       />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<LandingRedirect />} />
     </Routes>
   );
 }

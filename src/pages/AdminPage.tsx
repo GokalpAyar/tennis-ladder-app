@@ -1,5 +1,23 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import {
+  buildEmptyTournamentDrawSlots,
+  buildEmptyTournamentRoundSettings,
+  buildTournamentBracketRounds,
+  formatTournamentEventType,
+  getTournamentRoundSpecs,
+  getTournamentCategoryStatus,
+  getTournamentSlotKey,
+  toTournamentDrawSize,
+  toTournamentEventType,
+  TOURNAMENT_DRAW_SIZES,
+  type TournamentBracketRound,
+  type TournamentCategory,
+  type TournamentDrawSlot,
+  type TournamentDrawSize,
+  type TournamentEventType,
+  type TournamentRoundSetting,
+} from '../features/tournaments/tournamentCategories';
 import { supabase } from '../lib/supabase';
 
 type Profile = {
@@ -48,8 +66,30 @@ type RankingDraft = {
   losses: number;
 };
 
-type AdminSection = 'pending' | 'ladder' | 'matches' | 'settings';
+type TournamentCategoryDraft = {
+  draw_size: TournamentDrawSize;
+  event_type: TournamentEventType;
+  is_published: boolean;
+  name: string;
+};
+
+type TournamentSlotDraft = {
+  participant_name: string;
+};
+
+type AdminSection = 'pending' | 'ladder' | 'matches' | 'categories' | 'draws' | 'settings';
 type MatchFilter = 'active' | 'time' | 'scheduled' | 'completed' | 'canceled';
+
+const tournamentCategorySelect =
+  'id, name, event_type, draw_size, is_published, display_order, created_at, updated_at';
+const tournamentDrawSlotSelect =
+  'id, category_id, round_number, round_name, match_number, slot_number, participant_name, is_winner, score, created_at, updated_at';
+const tournamentRoundSettingSelect =
+  'id, category_id, round_number, round_name, deadline_text, created_at, updated_at';
+const adminBracketMatchHeight = 64;
+const adminBracketBaseGap = 10;
+const adminBracketColumnWidth = 240;
+const adminBracketColumnGap = 44;
 
 const matchFilters: Array<{ id: MatchFilter; label: string }> = [
   { id: 'active', label: 'Active Challenges' },
@@ -64,19 +104,56 @@ function AdminPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [rankings, setRankings] = useState<LadderRanking[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
+  const [tournamentCategories, setTournamentCategories] = useState<TournamentCategory[]>([]);
   const [rankingDrafts, setRankingDrafts] = useState<Record<string, RankingDraft>>({});
   const [approvalRankDrafts, setApprovalRankDrafts] = useState<Record<string, number>>({});
   const [profileNameDrafts, setProfileNameDrafts] = useState<Record<string, string>>({});
+  const [categoryDrafts, setCategoryDrafts] = useState<Record<string, TournamentCategoryDraft>>({});
+  const [selectedDrawCategoryId, setSelectedDrawCategoryId] = useState('');
+  const [drawSlots, setDrawSlots] = useState<TournamentDrawSlot[]>([]);
+  const [roundSettings, setRoundSettings] = useState<TournamentRoundSetting[]>([]);
+  const [slotDrafts, setSlotDrafts] = useState<Record<string, TournamentSlotDraft>>({});
+  const [roundDeadlineDrafts, setRoundDeadlineDrafts] = useState<Record<number, string>>({});
   const [activeSection, setActiveSection] = useState<AdminSection>('pending');
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('active');
   const [isLoading, setIsLoading] = useState(true);
+  const [isDrawLoading, setIsDrawLoading] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [categoryErrorMessage, setCategoryErrorMessage] = useState('');
+  const [drawErrorMessage, setDrawErrorMessage] = useState('');
 
   useEffect(() => {
     loadAdminData();
   }, []);
+
+  useEffect(() => {
+    if (tournamentCategories.length === 0) {
+      setSelectedDrawCategoryId('');
+      return;
+    }
+
+    if (
+      !selectedDrawCategoryId ||
+      !tournamentCategories.some((category) => category.id === selectedDrawCategoryId)
+    ) {
+      setSelectedDrawCategoryId(tournamentCategories[0].id);
+    }
+  }, [selectedDrawCategoryId, tournamentCategories]);
+
+  useEffect(() => {
+    if (!selectedDrawCategoryId) {
+      setDrawSlots([]);
+      setRoundSettings([]);
+      setSlotDrafts({});
+      setRoundDeadlineDrafts({});
+      setDrawErrorMessage('');
+      return;
+    }
+
+    loadTournamentDrawData(selectedDrawCategoryId);
+  }, [selectedDrawCategoryId]);
 
   const profilesById = useMemo(() => {
     return new Map(profiles.map((profile) => [profile.id, profile]));
@@ -102,6 +179,10 @@ function AdminPage() {
     return [...rankings].sort((first, second) => first.rank_position - second.rank_position);
   }, [rankings]);
 
+  const selectedDrawCategory = useMemo(() => {
+    return tournamentCategories.find((category) => category.id === selectedDrawCategoryId) ?? null;
+  }, [selectedDrawCategoryId, tournamentCategories]);
+
   const filteredMatches = useMemo(() => {
     return matches
       .filter((match) => matchMatchesFilter(match, matchFilter))
@@ -120,11 +201,13 @@ function AdminPage() {
   async function loadAdminData() {
     setIsLoading(true);
     setErrorMessage('');
+    setCategoryErrorMessage('');
 
     const [
       { data: profileRows, error: profilesError },
       { data: rankingRows, error: rankingsError },
       { data: matchRows, error: matchesError },
+      { data: tournamentCategoryRows, error: tournamentCategoriesError },
     ] = await Promise.all([
       supabase.from('profiles').select('id, full_name, email, role, status').order('full_name'),
       supabase
@@ -135,6 +218,10 @@ function AdminPage() {
         .from('matches')
         .select('id, challenger_id, opponent_id, status, proposed_match_at, scheduled_match_ends_at, cancel_reason, canceled_at, winner_id, created_at')
         .order('created_at', { ascending: false }),
+      supabase
+        .from('tournament_categories')
+        .select(tournamentCategorySelect)
+        .order('display_order', { ascending: true }),
     ]);
 
     if (profilesError || rankingsError || matchesError) {
@@ -150,6 +237,9 @@ function AdminPage() {
 
     const nextRankings = (rankingRows ?? []) as LadderRanking[];
     const nextProfiles = (profileRows ?? []) as Profile[];
+    const nextTournamentCategories = tournamentCategoriesError
+      ? []
+      : (tournamentCategoryRows ?? []) as TournamentCategory[];
     const highestRank = nextRankings.reduce(
       (highest, ranking) => Math.max(highest, ranking.rank_position),
       0,
@@ -158,6 +248,8 @@ function AdminPage() {
     setProfiles(nextProfiles);
     setRankings(nextRankings);
     setMatches((matchRows ?? []) as Match[]);
+    setTournamentCategories(nextTournamentCategories);
+    setCategoryErrorMessage(tournamentCategoriesError?.message ?? '');
     setRankingDrafts(
       Object.fromEntries(
         nextRankings.map((ranking) => [
@@ -166,6 +258,19 @@ function AdminPage() {
             rank_position: ranking.rank_position,
             wins: ranking.wins ?? 0,
             losses: ranking.losses ?? 0,
+          },
+        ]),
+      ),
+    );
+    setCategoryDrafts(
+      Object.fromEntries(
+        nextTournamentCategories.map((category) => [
+          category.id,
+          {
+            draw_size: toTournamentDrawSize(category.draw_size),
+            event_type: toTournamentEventType(category.event_type),
+            is_published: Boolean(category.is_published),
+            name: category.name,
           },
         ]),
       ),
@@ -187,6 +292,128 @@ function AdminPage() {
       return nextDrafts;
     });
     setIsLoading(false);
+  }
+
+  async function loadTournamentDrawData(categoryId: string, drawSizeOverride?: TournamentDrawSize) {
+    const category = tournamentCategories.find(
+      (tournamentCategory) => tournamentCategory.id === categoryId,
+    );
+
+    if (!category) {
+      return;
+    }
+
+    const drawSize = drawSizeOverride ?? category.draw_size;
+
+    setIsDrawLoading(true);
+    setDrawErrorMessage('');
+
+    const drawRows = await ensureTournamentDrawRows(categoryId, drawSize);
+
+    if (!drawRows) {
+      setIsDrawLoading(false);
+      return;
+    }
+
+    setDrawSlots(drawRows.slots);
+    setRoundSettings(drawRows.roundSettings);
+    setSlotDrafts(
+      Object.fromEntries(
+        drawRows.slots.map((slot) => [
+          getTournamentSlotKey(slot),
+          {
+            participant_name: slot.participant_name ?? '',
+          },
+        ]),
+      ),
+    );
+    setRoundDeadlineDrafts(
+      Object.fromEntries(
+        getTournamentRoundSpecs(drawSize).map((roundSpec) => {
+          const setting = drawRows.roundSettings.find(
+            (roundSetting) => roundSetting.round_number === roundSpec.roundNumber,
+          );
+
+          return [roundSpec.roundNumber, setting?.deadline_text ?? ''];
+        }),
+      ),
+    );
+    setIsDrawLoading(false);
+  }
+
+  async function ensureTournamentDrawRows(categoryId: string, drawSize: TournamentDrawSize) {
+    const drawRows = await fetchTournamentDrawRows(categoryId);
+
+    if (!drawRows) {
+      return null;
+    }
+
+    const existingSlotKeys = new Set(drawRows.slots.map((slot) => getTournamentSlotKey(slot)));
+    const missingSlots = buildEmptyTournamentDrawSlots(categoryId, drawSize).filter(
+      (slot) => !existingSlotKeys.has(getTournamentSlotKey(slot)),
+    );
+    const existingRoundNumbers = new Set(
+      drawRows.roundSettings.map((roundSetting) => roundSetting.round_number),
+    );
+    const missingRoundSettings = buildEmptyTournamentRoundSettings(categoryId, drawSize).filter(
+      (roundSetting) => !existingRoundNumbers.has(roundSetting.round_number),
+    );
+
+    const [{ error: slotsInsertError }, { error: settingsInsertError }] = await Promise.all([
+      missingSlots.length > 0
+        ? supabase.from('tournament_draw_slots').insert(missingSlots)
+        : Promise.resolve({ error: null }),
+      missingRoundSettings.length > 0
+        ? supabase.from('tournament_round_settings').insert(missingRoundSettings)
+        : Promise.resolve({ error: null }),
+    ]);
+
+    if (slotsInsertError || settingsInsertError) {
+      setDrawErrorMessage(
+        slotsInsertError?.message ??
+          settingsInsertError?.message ??
+          'Unable to prepare draw rows.',
+      );
+      return null;
+    }
+
+    if (missingSlots.length > 0 || missingRoundSettings.length > 0) {
+      return fetchTournamentDrawRows(categoryId);
+    }
+
+    return drawRows;
+  }
+
+  async function fetchTournamentDrawRows(categoryId: string) {
+    const [
+      { data: slotRows, error: slotsError },
+      { data: settingRows, error: settingsError },
+    ] = await Promise.all([
+      supabase
+        .from('tournament_draw_slots')
+        .select(tournamentDrawSlotSelect)
+        .eq('category_id', categoryId)
+        .order('round_number', { ascending: true })
+        .order('match_number', { ascending: true })
+        .order('slot_number', { ascending: true }),
+      supabase
+        .from('tournament_round_settings')
+        .select(tournamentRoundSettingSelect)
+        .eq('category_id', categoryId)
+        .order('round_number', { ascending: true }),
+    ]);
+
+    if (slotsError || settingsError) {
+      setDrawErrorMessage(
+        slotsError?.message ?? settingsError?.message ?? 'Unable to load tournament draw.',
+      );
+      return null;
+    }
+
+    return {
+      roundSettings: (settingRows ?? []) as TournamentRoundSetting[],
+      slots: (slotRows ?? []) as TournamentDrawSlot[],
+    };
   }
 
   async function handleLogout() {
@@ -465,6 +692,207 @@ function AdminPage() {
     }));
   }
 
+  function updateCategoryDraft<Field extends keyof TournamentCategoryDraft>(
+    categoryId: string,
+    field: Field,
+    value: TournamentCategoryDraft[Field],
+  ) {
+    setCategoryDrafts((current) => ({
+      ...current,
+      [categoryId]: {
+        ...current[categoryId],
+        [field]: value,
+      },
+    }));
+  }
+
+  async function saveTournamentCategory(category: TournamentCategory) {
+    const draft = categoryDrafts[category.id];
+
+    if (!draft) {
+      return;
+    }
+
+    const trimmedName = draft.name.trim();
+
+    if (!trimmedName) {
+      setErrorMessage('Category name is required.');
+      return;
+    }
+
+    setActionId(`category-${category.id}`);
+    setMessage('');
+    setErrorMessage('');
+
+    const { error } = await supabase
+      .from('tournament_categories')
+      .update({
+        draw_size: draft.draw_size,
+        event_type: draft.event_type,
+        is_published: draft.is_published,
+        name: trimmedName,
+      })
+      .eq('id', category.id);
+
+    setActionId(null);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    setMessage('Tournament category updated.');
+    await loadAdminData();
+  }
+
+  function updateSlotDraft(
+    slotKey: string,
+    value: string,
+  ) {
+    setSlotDrafts((current) => {
+      const existingDraft = current[slotKey] ?? {
+        participant_name: '',
+      };
+
+      return {
+        ...current,
+        [slotKey]: {
+          ...existingDraft,
+          participant_name: value,
+        },
+      };
+    });
+  }
+
+  function updateRoundDeadlineDraft(roundNumber: number, value: string) {
+    setRoundDeadlineDrafts((current) => ({
+      ...current,
+      [roundNumber]: value,
+    }));
+  }
+
+  async function updateDrawSizeDraft(category: TournamentCategory, drawSize: TournamentDrawSize) {
+    const currentDraft = categoryDrafts[category.id];
+    const currentDrawSize = currentDraft?.draw_size ?? category.draw_size;
+
+    if (drawSize < currentDrawSize) {
+      const confirmed = window.confirm(
+        'Reducing draw size may hide existing bracket slots. Existing data will not be deleted automatically. Continue?',
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    updateCategoryDraft(category.id, 'draw_size', drawSize);
+    await loadTournamentDrawData(category.id, drawSize);
+  }
+
+  async function saveTournamentDraw(
+    category: TournamentCategory,
+    options: { isPublishedOverride?: boolean } = {},
+  ) {
+    const defaultDraft: TournamentCategoryDraft = {
+      draw_size: category.draw_size,
+      event_type: category.event_type,
+      is_published: category.is_published,
+      name: category.name,
+    };
+    const currentDraft = categoryDrafts[category.id] ?? defaultDraft;
+    const draft = {
+      ...currentDraft,
+      is_published: options.isPublishedOverride ?? currentDraft.is_published,
+    };
+
+    updateCategoryDraft(category.id, 'is_published', draft.is_published);
+
+    setActionId(`draw-${category.id}`);
+    setMessage('');
+    setErrorMessage('');
+    setDrawErrorMessage('');
+
+    const { error: categoryUpdateError } = await supabase
+      .from('tournament_categories')
+      .update({
+        draw_size: draft.draw_size,
+        is_published: draft.is_published,
+      })
+      .eq('id', category.id);
+
+    if (categoryUpdateError) {
+      setActionId(null);
+      updateCategoryDraft(category.id, 'is_published', category.is_published);
+      setErrorMessage(categoryUpdateError.message);
+      return;
+    }
+
+    const drawRows = await ensureTournamentDrawRows(category.id, draft.draw_size);
+
+    if (!drawRows) {
+      setActionId(null);
+      return;
+    }
+
+    const visibleRounds = buildTournamentBracketRounds({
+      drawSize: draft.draw_size,
+      roundSettings: drawRows.roundSettings,
+      slots: drawRows.slots,
+    });
+    const visibleSlots = visibleRounds.flatMap((round) =>
+      round.matches.flatMap((match) => match.slots),
+    );
+    const slotRows = visibleSlots.map((slot) => {
+      const slotDraft = slotDrafts[getTournamentSlotKey(slot)];
+      const participantName = slotDraft?.participant_name ?? slot.participant_name ?? '';
+
+      return {
+        category_id: category.id,
+        is_winner: Boolean(slot.is_winner),
+        match_number: slot.match_number,
+        participant_name: participantName.trim() || null,
+        round_name: slot.round_name,
+        round_number: slot.round_number,
+        score: slot.score,
+        slot_number: slot.slot_number,
+      };
+    });
+    const roundRows = getTournamentRoundSpecs(draft.draw_size).map((roundSpec) => ({
+      category_id: category.id,
+      deadline_text: roundDeadlineDrafts[roundSpec.roundNumber]?.trim() || null,
+      round_name: roundSpec.roundName,
+      round_number: roundSpec.roundNumber,
+    }));
+
+    const [{ error: slotsSaveError }, { error: roundsSaveError }] = await Promise.all([
+      supabase
+        .from('tournament_draw_slots')
+        .upsert(slotRows, {
+          onConflict: 'category_id,round_number,match_number,slot_number',
+        }),
+      supabase
+        .from('tournament_round_settings')
+        .upsert(roundRows, {
+          onConflict: 'category_id,round_number',
+        }),
+    ]);
+
+    setActionId(null);
+
+    if (slotsSaveError || roundsSaveError) {
+      setErrorMessage(
+        slotsSaveError?.message ?? roundsSaveError?.message ?? 'Unable to save draw.',
+      );
+      return;
+    }
+
+    setMessage(
+      draft.is_published ? 'Tournament draw published.' : 'Tournament draw saved as draft.',
+    );
+    await loadAdminData();
+    await loadTournamentDrawData(category.id, draft.draw_size);
+  }
+
   return (
     <main className="min-h-screen bg-[#f7f8fc] px-4 py-5 text-[#071a3d] sm:px-6 lg:px-8">
       <section className="mx-auto w-full max-w-[82rem] space-y-5">
@@ -516,18 +944,21 @@ function AdminPage() {
           </div>
         ) : (
           <>
-            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <SummaryCard label="Pending" value={pendingProfiles.length} />
               <SummaryCard label="Ranked" value={rankings.length} />
               <SummaryCard label="Scheduled" value={matchCounts.scheduled} />
               <SummaryCard label="Completed" value={matchCounts.completed} />
+              <SummaryCard label="Categories" value={tournamentCategories.length} />
             </section>
 
-            <nav className="grid gap-2 rounded-3xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-4">
+            <nav className="grid gap-2 rounded-3xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-2 lg:grid-cols-6">
               {([
                 ['pending', 'Pending Players'],
                 ['ladder', 'Ladder Management'],
                 ['matches', 'Matches'],
+                ['categories', 'Categories'],
+                ['draws', 'Draws'],
                 ['settings', 'Settings'],
               ] as const).map(([section, label]) => (
                 <button
@@ -771,6 +1202,185 @@ function AdminPage() {
               </AdminPanel>
             )}
 
+            {activeSection === 'categories' && (
+              <AdminPanel
+                title="Tournament Categories"
+                description="Edit category names, event type, draw size, and published status."
+              >
+                <div className="grid gap-3">
+                  {categoryErrorMessage ? (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+                      {categoryErrorMessage}
+                    </div>
+                  ) : tournamentCategories.length === 0 ? (
+                    <AdminEmptyState message="No tournament categories found. Run the tournament category SQL seed in Supabase." />
+                  ) : (
+                    tournamentCategories.map((category) => {
+                      const draft = categoryDrafts[category.id] ?? {
+                        draw_size: toTournamentDrawSize(category.draw_size),
+                        event_type: toTournamentEventType(category.event_type),
+                        is_published: Boolean(category.is_published),
+                        name: category.name,
+                      };
+
+                      return (
+                        <article
+                          className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
+                          key={category.id}
+                        >
+                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_10rem_8rem_10rem_auto] lg:items-end">
+                            <label className="block min-w-0">
+                              <span className="admin-label">Category Name</span>
+                              <input
+                                className="admin-input mt-1"
+                                value={draft.name}
+                                onChange={(event) =>
+                                  updateCategoryDraft(category.id, 'name', event.target.value)
+                                }
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="admin-label">Event Type</span>
+                              <select
+                                className="admin-input mt-1"
+                                value={draft.event_type}
+                                onChange={(event) =>
+                                  updateCategoryDraft(
+                                    category.id,
+                                    'event_type',
+                                    toTournamentEventType(event.target.value),
+                                  )
+                                }
+                              >
+                                <option value="singles">Singles</option>
+                                <option value="doubles">Doubles</option>
+                              </select>
+                            </label>
+
+                            <label className="block">
+                              <span className="admin-label">Draw Size</span>
+                              <select
+                                className="admin-input mt-1"
+                                value={draft.draw_size}
+                                onChange={(event) =>
+                                  updateCategoryDraft(
+                                    category.id,
+                                    'draw_size',
+                                    toTournamentDrawSize(event.target.value),
+                                  )
+                                }
+                              >
+                                {TOURNAMENT_DRAW_SIZES.map((drawSize) => (
+                                  <option key={drawSize} value={drawSize}>
+                                    {drawSize}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                              <input
+                                className="size-4 accent-[#071a3d]"
+                                type="checkbox"
+                                checked={draft.is_published}
+                                onChange={(event) =>
+                                  updateCategoryDraft(
+                                    category.id,
+                                    'is_published',
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                              <span className="text-sm font-black text-[#071a3d]">
+                                Published
+                              </span>
+                            </label>
+
+                            <button
+                              className="admin-primary-button"
+                              type="button"
+                              onClick={() => saveTournamentCategory(category)}
+                              disabled={actionId === `category-${category.id}`}
+                            >
+                              {actionId === `category-${category.id}` ? 'Saving...' : 'Save'}
+                            </button>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs font-black">
+                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700">
+                              {formatTournamentEventType(draft.event_type)}
+                            </span>
+                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700">
+                              {draft.draw_size} draw
+                            </span>
+                            <span
+                              className={`rounded-full border px-2.5 py-1 ${
+                                draft.is_published
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                  : 'border-amber-200 bg-amber-50 text-amber-800'
+                              }`}
+                            >
+                              {getTournamentCategoryStatus({
+                                ...category,
+                                is_published: draft.is_published,
+                              })}
+                            </span>
+                          </div>
+                        </article>
+                      );
+                    })
+                  )}
+                </div>
+              </AdminPanel>
+            )}
+
+            {activeSection === 'draws' && (
+              <AdminPanel
+                title="Tournament Draws"
+                description="Manually edit bracket slots, round deadlines, and publish status."
+              >
+                {categoryErrorMessage ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+                    {categoryErrorMessage}
+                  </div>
+                ) : tournamentCategories.length === 0 ? (
+                  <AdminEmptyState message="No tournament categories found. Run the tournament category SQL seed in Supabase." />
+                ) : selectedDrawCategory ? (
+                  <DrawEditor
+                    actionId={actionId}
+                    category={selectedDrawCategory}
+                    categoryDraft={
+                      categoryDrafts[selectedDrawCategory.id] ?? {
+                        draw_size: selectedDrawCategory.draw_size,
+                        event_type: selectedDrawCategory.event_type,
+                        is_published: selectedDrawCategory.is_published,
+                        name: selectedDrawCategory.name,
+                      }
+                    }
+                    drawErrorMessage={drawErrorMessage}
+                    drawSlots={drawSlots}
+                    isLoading={isDrawLoading}
+                    roundDeadlineDrafts={roundDeadlineDrafts}
+                    roundSettings={roundSettings}
+                    selectedCategoryId={selectedDrawCategoryId}
+                    slotDrafts={slotDrafts}
+                    tournamentCategories={tournamentCategories}
+                    onCategoryChange={setSelectedDrawCategoryId}
+                    onDrawSizeChange={updateDrawSizeDraft}
+                    onPublishedChange={(value) =>
+                      saveTournamentDraw(selectedDrawCategory, { isPublishedOverride: value })
+                    }
+                    onRoundDeadlineChange={updateRoundDeadlineDraft}
+                    onSave={saveTournamentDraw}
+                    onSlotChange={updateSlotDraft}
+                  />
+                ) : (
+                  <AdminEmptyState message="Select a tournament category to edit its draw." />
+                )}
+              </AdminPanel>
+            )}
+
             {activeSection === 'settings' && (
               <AdminPanel title="Settings" description="Season controls. No player profiles or auth users are deleted.">
                 <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
@@ -797,6 +1407,336 @@ function AdminPage() {
         )}
       </section>
     </main>
+  );
+}
+
+function DrawEditor({
+  actionId,
+  category,
+  categoryDraft,
+  drawErrorMessage,
+  drawSlots,
+  isLoading,
+  onCategoryChange,
+  onDrawSizeChange,
+  onPublishedChange,
+  onRoundDeadlineChange,
+  onSave,
+  onSlotChange,
+  roundDeadlineDrafts,
+  roundSettings,
+  selectedCategoryId,
+  slotDrafts,
+  tournamentCategories,
+}: {
+  actionId: string | null;
+  category: TournamentCategory;
+  categoryDraft: TournamentCategoryDraft;
+  drawErrorMessage: string;
+  drawSlots: TournamentDrawSlot[];
+  isLoading: boolean;
+  onCategoryChange: (categoryId: string) => void;
+  onDrawSizeChange: (category: TournamentCategory, drawSize: TournamentDrawSize) => void;
+  onPublishedChange: (value: boolean) => void | Promise<void>;
+  onRoundDeadlineChange: (roundNumber: number, value: string) => void;
+  onSave: (category: TournamentCategory) => void;
+  onSlotChange: (slotKey: string, value: string) => void;
+  roundDeadlineDrafts: Record<number, string>;
+  roundSettings: TournamentRoundSetting[];
+  selectedCategoryId: string;
+  slotDrafts: Record<string, TournamentSlotDraft>;
+  tournamentCategories: TournamentCategory[];
+}) {
+  const rounds = buildTournamentBracketRounds({
+    drawSize: categoryDraft.draw_size,
+    roundSettings,
+    slots: drawSlots,
+  });
+  const layout = getAdminBracketLayout(
+    rounds,
+    adminBracketColumnWidth,
+    adminBracketColumnGap,
+  );
+  const isSaving = actionId === `draw-${category.id}`;
+  const participantLabel =
+    categoryDraft.event_type === 'doubles' ? 'Team name' : 'Player name';
+
+  return (
+    <div className="space-y-4">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="h-1 bg-[#071a3d]" />
+        <div className="grid gap-3 p-4 lg:grid-cols-[minmax(0,1.35fr)_8rem_auto_auto] lg:items-end">
+          <label className="block min-w-0">
+            <span className="admin-label">Category</span>
+            <select
+              className="admin-input mt-1"
+              value={selectedCategoryId}
+              onChange={(event) => onCategoryChange(event.target.value)}
+            >
+              {tournamentCategories.map((tournamentCategory) => (
+                <option key={tournamentCategory.id} value={tournamentCategory.id}>
+                  {tournamentCategory.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="admin-label">Draw Size</span>
+            <select
+              className="admin-input mt-1"
+              value={categoryDraft.draw_size}
+              onChange={(event) =>
+                onDrawSizeChange(category, toTournamentDrawSize(event.target.value))
+              }
+            >
+              {TOURNAMENT_DRAW_SIZES.map((drawSize) => (
+                <option key={drawSize} value={drawSize}>
+                  {drawSize}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            className="admin-soft-button h-11"
+            type="button"
+            onClick={() => onSave(category)}
+            disabled={isSaving}
+          >
+            {isSaving ? 'Saving...' : 'Save Draw'}
+          </button>
+
+          <button
+            className={
+              categoryDraft.is_published
+                ? 'admin-soft-button h-11 border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                : 'admin-primary-button h-11'
+            }
+            type="button"
+            onClick={() => onPublishedChange(!categoryDraft.is_published)}
+            disabled={isSaving}
+          >
+            {isSaving
+              ? 'Saving...'
+              : categoryDraft.is_published
+                ? 'Unpublish'
+                : 'Publish'}
+          </button>
+        </div>
+      </div>
+
+      {drawErrorMessage && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">
+          {drawErrorMessage}
+        </div>
+      )}
+
+      {isLoading ? (
+        <AdminEmptyState message="Loading draw editor..." />
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 bg-white px-4 py-3">
+            <p className="text-sm font-black text-[#071a3d]">
+              {category.name} · {categoryDraft.draw_size} {formatTournamentEventType(category.event_type)} draw
+            </p>
+          </div>
+
+          <div className="overflow-x-auto bg-[#f8fafc] px-4 py-5">
+            <div className="min-w-max pb-2" style={{ width: layout.canvasWidth }}>
+              <div className="flex pb-3" style={{ gap: layout.columnGap }}>
+                {rounds.map((round) => (
+                  <div
+                    className="shrink-0"
+                    key={round.roundNumber}
+                    style={{ width: layout.columnWidth }}
+                  >
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm shadow-slate-900/5">
+                      <h3 className="text-xs font-black uppercase tracking-[0.12em] text-[#071a3d]">
+                        {round.roundName}
+                      </h3>
+                      <label className="mt-2 block">
+                        <span className="text-xs font-black text-slate-600">
+                          Deadline
+                        </span>
+                        <input
+                          className="admin-input mt-1 h-9 text-sm shadow-none"
+                          placeholder="TBD or date"
+                          value={roundDeadlineDrafts[round.roundNumber] ?? ''}
+                          onChange={(event) =>
+                            onRoundDeadlineChange(round.roundNumber, event.target.value)
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                className="relative"
+                style={{ height: layout.canvasHeight, width: layout.canvasWidth }}
+              >
+                <AdminBracketConnectors
+                  layout={layout}
+                  rounds={rounds}
+                  strokeClass="stroke-blue-200"
+                />
+                {rounds.map((round, roundIndex) =>
+                  round.matches.map((match, matchIndex) => (
+                    <div
+                      className="absolute z-10"
+                      key={`${round.roundNumber}-${match.matchNumber}`}
+                      style={{
+                        height: layout.matchHeight,
+                        left: layout.getColumnLeft(roundIndex),
+                        top: layout.getMatchTop(roundIndex, matchIndex),
+                        width: layout.columnWidth,
+                      }}
+                    >
+                      <DrawEditorMatch
+                        match={match}
+                        participantLabel={participantLabel}
+                        onSlotChange={onSlotChange}
+                        slotDrafts={slotDrafts}
+                      />
+                    </div>
+                  )),
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DrawEditorMatch({
+  match,
+  participantLabel,
+  onSlotChange,
+  slotDrafts,
+}: {
+  match: TournamentBracketRound['matches'][number];
+  participantLabel: string;
+  onSlotChange: (slotKey: string, value: string) => void;
+  slotDrafts: Record<string, TournamentSlotDraft>;
+}) {
+  return (
+    <article className="h-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5 ring-1 ring-white">
+      <div className="h-5 border-b border-slate-100 bg-blue-50 px-2.5 py-1">
+        <p className="text-[0.62rem] font-black uppercase tracking-[0.12em] text-slate-600">
+          Match {match.matchNumber}
+        </p>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {match.slots.map((slot) => {
+          const slotKey = getTournamentSlotKey(slot);
+          const draft = slotDrafts[slotKey];
+
+          return (
+            <input
+              aria-label={`Match ${match.matchNumber} slot ${slot.slot_number} ${participantLabel}`}
+              className="h-[22px] w-full border-0 bg-white px-2.5 text-sm font-semibold text-[#071a3d] outline-none transition placeholder:text-slate-400 focus:bg-blue-50"
+              key={`${slot.match_number}-${slot.slot_number}`}
+              placeholder={`${participantLabel} ${slot.slot_number}`}
+              value={draft?.participant_name ?? slot.participant_name ?? ''}
+              onChange={(event) => onSlotChange(slotKey, event.target.value)}
+            />
+          );
+        })}
+      </div>
+    </article>
+  );
+}
+
+type AdminBracketLayout = {
+  canvasHeight: number;
+  canvasWidth: number;
+  columnGap: number;
+  columnWidth: number;
+  getColumnLeft: (roundIndex: number) => number;
+  getMatchTop: (roundIndex: number, matchIndex: number) => number;
+  matchHeight: number;
+};
+
+function getAdminBracketLayout(
+  rounds: TournamentBracketRound[],
+  columnWidth: number,
+  columnGap: number,
+): AdminBracketLayout {
+  const firstRoundMatchCount = rounds[0]?.matches.length ?? 1;
+  const step = adminBracketMatchHeight + adminBracketBaseGap;
+  const canvasHeight = firstRoundMatchCount * step - adminBracketBaseGap;
+  const canvasWidth = rounds.length * columnWidth + (rounds.length - 1) * columnGap;
+
+  return {
+    canvasHeight,
+    canvasWidth,
+    columnGap,
+    columnWidth,
+    getColumnLeft: (roundIndex) => roundIndex * (columnWidth + columnGap),
+    getMatchTop: (roundIndex, matchIndex) => {
+      const groupSize = 2 ** roundIndex;
+      const groupStart = matchIndex * groupSize * step;
+      const groupCenter = groupStart + (groupSize * step) / 2 - adminBracketBaseGap / 2;
+
+      return groupCenter - adminBracketMatchHeight / 2;
+    },
+    matchHeight: adminBracketMatchHeight,
+  };
+}
+
+function AdminBracketConnectors({
+  layout,
+  rounds,
+  strokeClass,
+}: {
+  layout: AdminBracketLayout;
+  rounds: TournamentBracketRound[];
+  strokeClass: string;
+}) {
+  const paths = rounds.slice(1).flatMap((round, roundOffset) => {
+    const roundIndex = roundOffset + 1;
+    const previousRoundIndex = roundIndex - 1;
+    const sourceX = layout.getColumnLeft(previousRoundIndex) + layout.columnWidth;
+    const targetX = layout.getColumnLeft(roundIndex);
+    const midX = sourceX + layout.columnGap / 2;
+
+    return round.matches.map((match, matchIndex) => {
+      const sourceY1 =
+        layout.getMatchTop(previousRoundIndex, matchIndex * 2) + layout.matchHeight / 2;
+      const sourceY2 =
+        layout.getMatchTop(previousRoundIndex, matchIndex * 2 + 1) + layout.matchHeight / 2;
+      const targetY = layout.getMatchTop(roundIndex, matchIndex) + layout.matchHeight / 2;
+
+      return {
+        d: `M ${sourceX} ${sourceY1} H ${midX} M ${sourceX} ${sourceY2} H ${midX} M ${midX} ${sourceY1} V ${sourceY2} M ${midX} ${targetY} H ${targetX}`,
+        key: `${round.roundNumber}-${match.matchNumber}`,
+      };
+    });
+  });
+
+  return (
+    <svg
+      aria-hidden="true"
+      className="pointer-events-none absolute left-0 top-0 z-0"
+      height={layout.canvasHeight}
+      viewBox={`0 0 ${layout.canvasWidth} ${layout.canvasHeight}`}
+      width={layout.canvasWidth}
+    >
+      {paths.map((path) => (
+        <path
+          className={strokeClass}
+          d={path.d}
+          fill="none"
+          key={path.key}
+          strokeLinecap="round"
+          strokeWidth="1.5"
+        />
+      ))}
+    </svg>
   );
 }
 

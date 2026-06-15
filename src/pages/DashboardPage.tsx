@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import AppLayout from '../app/AppLayout';
 import { useAuth } from '../app/AuthProvider';
+import { MENS_LADDER_PORTAL_LABEL } from '../app/portalAccess';
 import ChallengePlayerSystem from '../features/challenges/ChallengePlayerSystem';
 
 function DashboardPage() {
@@ -18,7 +19,7 @@ function DashboardPage() {
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-court-700">
-                    Roton Point Tennis Tournament Ladder
+                    {MENS_LADDER_PORTAL_LABEL}
                   </p>
                   <h1 className="mt-1.5 max-w-3xl text-2xl font-black leading-tight tracking-tight text-ink-900 sm:text-3xl lg:text-3xl">
                     Dashboard
@@ -111,10 +112,10 @@ function PendingApprovalGuide() {
             />
           </div>
           <p className="mt-6 text-xs font-black uppercase tracking-[0.18em] text-court-700">
-            Club Challenge Portal
+            {MENS_LADDER_PORTAL_LABEL}
           </p>
           <h1 className="mt-3 text-3xl font-black leading-tight tracking-tight text-ink-900 sm:text-4xl lg:text-5xl">
-            Welcome to the Roton Point Tennis Tournament Ladder
+            Welcome to the {MENS_LADDER_PORTAL_LABEL}
           </h1>
           <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-ink-700">
             Your account is awaiting admin approval.

@@ -1,5 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import {
+  getDefaultRouteForPortal,
+  getPortalPreferenceFromMetadata,
+  MENS_LADDER_PORTAL_LABEL,
+  TOURNAMENT_PORTAL_LABEL,
+} from '../app/portalAccess';
 import { supabase } from '../lib/supabase';
 
 function LoginPage() {
@@ -18,7 +24,7 @@ function LoginPage() {
     setResetMessage('');
     setIsSubmitting(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -30,7 +36,10 @@ function LoginPage() {
       return;
     }
 
-    navigate('/dashboard', { replace: true });
+    navigate(
+      getDefaultRouteForPortal(getPortalPreferenceFromMetadata(data.session?.user.user_metadata)),
+      { replace: true },
+    );
   }
 
   async function handlePasswordReset() {
@@ -72,13 +81,16 @@ function LoginPage() {
           />
         </div>
         <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight text-ink-900 sm:text-4xl">
-          Roton Point Tennis Tournament Ladder
+          Roton Point Tennis Portals
         </h1>
         <p className="mt-2 text-sm font-black uppercase tracking-[0.18em] text-court-700">
-          Club Challenge Portal
+          {TOURNAMENT_PORTAL_LABEL}
+        </p>
+        <p className="mt-1 text-sm font-black uppercase tracking-[0.18em] text-court-700">
+          {MENS_LADDER_PORTAL_LABEL}
         </p>
         <p className="mt-4 text-sm leading-6 text-ink-700">
-          Enter the club ladder and manage your next challenge.
+          Log in to view tournament draws and schedules or manage ladder access.
         </p>
         <form className="mt-8 space-y-5" onSubmit={handleLogin}>
           <label className="block text-left">
