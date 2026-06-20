@@ -77,9 +77,23 @@ type TournamentSlotDraft = {
   participant_name: string;
 };
 
+type TournamentDrawDraftPayload = {
+  drawSize: TournamentDrawSize;
+  roundDeadlineDrafts: Record<number, string>;
+  slotDrafts: Record<string, TournamentSlotDraft>;
+};
+
+type TournamentDrawLocalDraft = TournamentDrawDraftPayload & {
+  categoryId: string;
+  savedAt: number;
+};
+
+type DrawSaveStatus = 'saved' | 'unsaved' | 'draft-saved';
+
 type AdminSection = 'pending' | 'ladder' | 'matches' | 'categories' | 'draws' | 'settings';
 type MatchFilter = 'active' | 'time' | 'scheduled' | 'completed' | 'canceled';
 
+const tournamentDrawDraftStoragePrefix = 'roton-point:tournament-draw-draft:';
 const tournamentCategorySelect =
   'id, name, event_type, draw_size, is_published, display_order, created_at, updated_at';
 const tournamentDrawSlotSelect =
@@ -114,6 +128,10 @@ function AdminPage() {
   const [roundSettings, setRoundSettings] = useState<TournamentRoundSetting[]>([]);
   const [slotDrafts, setSlotDrafts] = useState<Record<string, TournamentSlotDraft>>({});
   const [roundDeadlineDrafts, setRoundDeadlineDrafts] = useState<Record<number, string>>({});
+  const [drawSavedSnapshot, setDrawSavedSnapshot] =
+    useState<TournamentDrawDraftPayload | null>(null);
+  const [pendingDrawDraft, setPendingDrawDraft] = useState<TournamentDrawLocalDraft | null>(null);
+  const [drawSaveStatus, setDrawSaveStatus] = useState<DrawSaveStatus>('saved');
   const [activeSection, setActiveSection] = useState<AdminSection>('pending');
   const [matchFilter, setMatchFilter] = useState<MatchFilter>('active');
   const [isLoading, setIsLoading] = useState(true);
@@ -148,6 +166,9 @@ function AdminPage() {
       setRoundSettings([]);
       setSlotDrafts({});
       setRoundDeadlineDrafts({});
+      setDrawSavedSnapshot(null);
+      setPendingDrawDraft(null);
+      setDrawSaveStatus('saved');
       setDrawErrorMessage('');
       return;
     }
@@ -182,6 +203,82 @@ function AdminPage() {
   const selectedDrawCategory = useMemo(() => {
     return tournamentCategories.find((category) => category.id === selectedDrawCategoryId) ?? null;
   }, [selectedDrawCategoryId, tournamentCategories]);
+
+  const currentDrawDraftPayload = useMemo(() => {
+    if (!selectedDrawCategory) {
+      return null;
+    }
+
+    const draft = categoryDrafts[selectedDrawCategory.id];
+
+    return normalizeTournamentDrawDraftPayload({
+      drawSize: draft?.draw_size ?? selectedDrawCategory.draw_size,
+      roundDeadlineDrafts,
+      slotDrafts,
+    });
+  }, [categoryDrafts, roundDeadlineDrafts, selectedDrawCategory, slotDrafts]);
+
+  const hasUnsavedDrawChanges = useMemo(() => {
+    if (!currentDrawDraftPayload || !drawSavedSnapshot) {
+      return false;
+    }
+
+    return (
+      getTournamentDrawDraftSignature(currentDrawDraftPayload) !==
+      getTournamentDrawDraftSignature(drawSavedSnapshot)
+    );
+  }, [currentDrawDraftPayload, drawSavedSnapshot]);
+
+  useEffect(() => {
+    if (!selectedDrawCategoryId || !currentDrawDraftPayload || !drawSavedSnapshot) {
+      return;
+    }
+
+    if (!hasUnsavedDrawChanges) {
+      setDrawSaveStatus('saved');
+      return;
+    }
+
+    setDrawSaveStatus('unsaved');
+
+    const autosaveId = window.setTimeout(() => {
+      const didSave = writeTournamentDrawLocalDraft({
+        ...currentDrawDraftPayload,
+        categoryId: selectedDrawCategoryId,
+        savedAt: Date.now(),
+      });
+
+      if (didSave) {
+        setDrawSaveStatus('draft-saved');
+      }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(autosaveId);
+    };
+  }, [
+    currentDrawDraftPayload,
+    drawSavedSnapshot,
+    hasUnsavedDrawChanges,
+    selectedDrawCategoryId,
+  ]);
+
+  useEffect(() => {
+    if (!hasUnsavedDrawChanges) {
+      return;
+    }
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [hasUnsavedDrawChanges]);
 
   const filteredMatches = useMemo(() => {
     return matches
@@ -294,7 +391,11 @@ function AdminPage() {
     setIsLoading(false);
   }
 
-  async function loadTournamentDrawData(categoryId: string, drawSizeOverride?: TournamentDrawSize) {
+  async function loadTournamentDrawData(
+    categoryId: string,
+    drawSizeOverride?: TournamentDrawSize,
+    savedDrawSizeOverride?: TournamentDrawSize,
+  ) {
     const category = tournamentCategories.find(
       (tournamentCategory) => tournamentCategory.id === categoryId,
     );
@@ -304,8 +405,10 @@ function AdminPage() {
     }
 
     const drawSize = drawSizeOverride ?? category.draw_size;
+    const savedDrawSize = savedDrawSizeOverride ?? category.draw_size;
 
     setIsDrawLoading(true);
+    setPendingDrawDraft(null);
     setDrawErrorMessage('');
 
     const drawRows = await ensureTournamentDrawRows(categoryId, drawSize);
@@ -315,29 +418,47 @@ function AdminPage() {
       return;
     }
 
+    const nextSlotDrafts = Object.fromEntries(
+      drawRows.slots.map((slot) => [
+        getTournamentSlotKey(slot),
+        {
+          participant_name: slot.participant_name ?? '',
+        },
+      ]),
+    );
+    const nextRoundDeadlineDrafts = Object.fromEntries(
+      getTournamentRoundSpecs(drawSize).map((roundSpec) => {
+        const setting = drawRows.roundSettings.find(
+          (roundSetting) => roundSetting.round_number === roundSpec.roundNumber,
+        );
+
+        return [roundSpec.roundNumber, setting?.deadline_text ?? ''];
+      }),
+    );
+    const savedSnapshot = normalizeTournamentDrawDraftPayload({
+      drawSize: savedDrawSize,
+      roundDeadlineDrafts: nextRoundDeadlineDrafts,
+      slotDrafts: nextSlotDrafts,
+    });
+    const localDraft = readTournamentDrawLocalDraft(categoryId);
+    const latestDatabaseUpdate = getLatestTournamentDrawDataTime(
+      drawRows.slots,
+      drawRows.roundSettings,
+    );
+
     setDrawSlots(drawRows.slots);
     setRoundSettings(drawRows.roundSettings);
-    setSlotDrafts(
-      Object.fromEntries(
-        drawRows.slots.map((slot) => [
-          getTournamentSlotKey(slot),
-          {
-            participant_name: slot.participant_name ?? '',
-          },
-        ]),
-      ),
-    );
-    setRoundDeadlineDrafts(
-      Object.fromEntries(
-        getTournamentRoundSpecs(drawSize).map((roundSpec) => {
-          const setting = drawRows.roundSettings.find(
-            (roundSetting) => roundSetting.round_number === roundSpec.roundNumber,
-          );
+    setSlotDrafts(nextSlotDrafts);
+    setRoundDeadlineDrafts(nextRoundDeadlineDrafts);
+    setDrawSavedSnapshot(savedSnapshot);
+    setDrawSaveStatus('saved');
 
-          return [roundSpec.roundNumber, setting?.deadline_text ?? ''];
-        }),
-      ),
-    );
+    if (localDraft && localDraft.savedAt > latestDatabaseUpdate) {
+      setPendingDrawDraft(localDraft);
+    } else if (localDraft) {
+      removeTournamentDrawLocalDraft(categoryId);
+    }
+
     setIsDrawLoading(false);
   }
 
@@ -417,6 +538,10 @@ function AdminPage() {
   }
 
   async function handleLogout() {
+    if (!confirmLeavingUnsavedDraw()) {
+      return;
+    }
+
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
   }
@@ -789,6 +914,57 @@ function AdminPage() {
     await loadTournamentDrawData(category.id, drawSize);
   }
 
+  function confirmLeavingUnsavedDraw() {
+    if (!hasUnsavedDrawChanges) {
+      return true;
+    }
+
+    return window.confirm(
+      'You have unsaved tournament draw changes. Leave without saving to the database?',
+    );
+  }
+
+  function changeAdminSection(section: AdminSection) {
+    if (section !== activeSection && activeSection === 'draws' && !confirmLeavingUnsavedDraw()) {
+      return;
+    }
+
+    setActiveSection(section);
+  }
+
+  function changeSelectedDrawCategory(categoryId: string) {
+    if (categoryId === selectedDrawCategoryId) {
+      return;
+    }
+
+    if (!confirmLeavingUnsavedDraw()) {
+      return;
+    }
+
+    setSelectedDrawCategoryId(categoryId);
+  }
+
+  function restorePendingDrawDraft() {
+    if (!pendingDrawDraft || pendingDrawDraft.categoryId !== selectedDrawCategoryId) {
+      return;
+    }
+
+    updateCategoryDraft(selectedDrawCategoryId, 'draw_size', pendingDrawDraft.drawSize);
+    setSlotDrafts(pendingDrawDraft.slotDrafts);
+    setRoundDeadlineDrafts(pendingDrawDraft.roundDeadlineDrafts);
+    setPendingDrawDraft(null);
+    setDrawSaveStatus('unsaved');
+  }
+
+  function discardPendingDrawDraft() {
+    if (pendingDrawDraft) {
+      removeTournamentDrawLocalDraft(pendingDrawDraft.categoryId);
+    }
+
+    setPendingDrawDraft(null);
+    setDrawSaveStatus(hasUnsavedDrawChanges ? 'unsaved' : 'saved');
+  }
+
   async function saveTournamentDraw(
     category: TournamentCategory,
     options: { isPublishedOverride?: boolean } = {},
@@ -886,11 +1062,14 @@ function AdminPage() {
       return;
     }
 
+    removeTournamentDrawLocalDraft(category.id);
+    setPendingDrawDraft(null);
+    setDrawSaveStatus('saved');
     setMessage(
       draft.is_published ? 'Tournament draw published.' : 'Tournament draw saved as draft.',
     );
     await loadAdminData();
-    await loadTournamentDrawData(category.id, draft.draw_size);
+    await loadTournamentDrawData(category.id, draft.draw_size, draft.draw_size);
   }
 
   return (
@@ -911,7 +1090,15 @@ function AdminPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link className="admin-soft-button border-white/20 bg-white/10 text-white hover:bg-white/15" to="/dashboard">
+              <Link
+                className="admin-soft-button border-white/20 bg-white/10 text-white hover:bg-white/15"
+                to="/dashboard"
+                onClick={(event) => {
+                  if (!confirmLeavingUnsavedDraw()) {
+                    event.preventDefault();
+                  }
+                }}
+              >
                 Dashboard
               </Link>
               <button
@@ -969,7 +1156,7 @@ function AdminPage() {
                   }`}
                   key={section}
                   type="button"
-                  onClick={() => setActiveSection(section)}
+                  onClick={() => changeAdminSection(section)}
                 >
                   {label}
                 </button>
@@ -1359,18 +1546,22 @@ function AdminPage() {
                       }
                     }
                     drawErrorMessage={drawErrorMessage}
+                    drawSaveStatus={drawSaveStatus}
                     drawSlots={drawSlots}
                     isLoading={isDrawLoading}
+                    pendingDrawDraft={pendingDrawDraft}
                     roundDeadlineDrafts={roundDeadlineDrafts}
                     roundSettings={roundSettings}
                     selectedCategoryId={selectedDrawCategoryId}
                     slotDrafts={slotDrafts}
                     tournamentCategories={tournamentCategories}
-                    onCategoryChange={setSelectedDrawCategoryId}
+                    onCategoryChange={changeSelectedDrawCategory}
+                    onDiscardDraft={discardPendingDrawDraft}
                     onDrawSizeChange={updateDrawSizeDraft}
                     onPublishedChange={(value) =>
                       saveTournamentDraw(selectedDrawCategory, { isPublishedOverride: value })
                     }
+                    onRestoreDraft={restorePendingDrawDraft}
                     onRoundDeadlineChange={updateRoundDeadlineDraft}
                     onSave={saveTournamentDraw}
                     onSlotChange={updateSlotDraft}
@@ -1415,14 +1606,18 @@ function DrawEditor({
   category,
   categoryDraft,
   drawErrorMessage,
+  drawSaveStatus,
   drawSlots,
   isLoading,
   onCategoryChange,
+  onDiscardDraft,
   onDrawSizeChange,
   onPublishedChange,
+  onRestoreDraft,
   onRoundDeadlineChange,
   onSave,
   onSlotChange,
+  pendingDrawDraft,
   roundDeadlineDrafts,
   roundSettings,
   selectedCategoryId,
@@ -1433,14 +1628,18 @@ function DrawEditor({
   category: TournamentCategory;
   categoryDraft: TournamentCategoryDraft;
   drawErrorMessage: string;
+  drawSaveStatus: DrawSaveStatus;
   drawSlots: TournamentDrawSlot[];
   isLoading: boolean;
   onCategoryChange: (categoryId: string) => void;
+  onDiscardDraft: () => void;
   onDrawSizeChange: (category: TournamentCategory, drawSize: TournamentDrawSize) => void;
   onPublishedChange: (value: boolean) => void | Promise<void>;
+  onRestoreDraft: () => void;
   onRoundDeadlineChange: (roundNumber: number, value: string) => void;
   onSave: (category: TournamentCategory) => void;
   onSlotChange: (slotKey: string, value: string) => void;
+  pendingDrawDraft: TournamentDrawLocalDraft | null;
   roundDeadlineDrafts: Record<number, string>;
   roundSettings: TournamentRoundSetting[];
   selectedCategoryId: string;
@@ -1524,7 +1723,35 @@ function DrawEditor({
                 : 'Publish'}
           </button>
         </div>
+        <div className="flex flex-col gap-2 border-t border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <DrawSaveStatusPill status={drawSaveStatus} />
+          <p className="text-xs font-semibold text-slate-600">
+            Local drafts are cleared after a successful database save.
+          </p>
+        </div>
       </div>
+
+      {pendingDrawDraft && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+          <span>Unsaved draft found. Restore it?</span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="rounded-full bg-[#071a3d] px-4 py-2 text-xs font-black text-white transition hover:bg-[#102a5c]"
+              type="button"
+              onClick={onRestoreDraft}
+            >
+              Restore Draft
+            </button>
+            <button
+              className="rounded-full border border-amber-300 bg-white px-4 py-2 text-xs font-black text-amber-950 transition hover:bg-amber-100"
+              type="button"
+              onClick={onDiscardDraft}
+            >
+              Discard Draft
+            </button>
+          </div>
+        </div>
+      )}
 
       {drawErrorMessage && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">
@@ -1609,6 +1836,31 @@ function DrawEditor({
         </div>
       )}
     </div>
+  );
+}
+
+function DrawSaveStatusPill({ status }: { status: DrawSaveStatus }) {
+  const statusConfig = {
+    'draft-saved': {
+      className: 'border-blue-200 bg-blue-50 text-blue-900',
+      label: 'Draft saved locally',
+    },
+    saved: {
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+      label: 'Saved to database',
+    },
+    unsaved: {
+      className: 'border-amber-200 bg-amber-50 text-amber-900',
+      label: 'Unsaved changes',
+    },
+  }[status];
+
+  return (
+    <span
+      className={`inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-xs font-black ${statusConfig.className}`}
+    >
+      {statusConfig.label}
+    </span>
   );
 }
 
@@ -2113,6 +2365,140 @@ function formatDateTime(value: string | null) {
     minute: '2-digit',
     month: 'short',
   }).format(new Date(value));
+}
+
+function getTournamentDrawDraftStorageKey(categoryId: string) {
+  return `${tournamentDrawDraftStoragePrefix}${categoryId}`;
+}
+
+function normalizeTournamentDrawDraftPayload(payload: {
+  drawSize: unknown;
+  roundDeadlineDrafts?: Record<string | number, unknown>;
+  slotDrafts?: Record<string, { participant_name?: unknown } | undefined>;
+}): TournamentDrawDraftPayload {
+  const slotDraftEntries = Object.entries(payload.slotDrafts ?? {})
+    .map(([slotKey, draft]) => [
+      slotKey,
+      {
+        participant_name:
+          typeof draft?.participant_name === 'string' ? draft.participant_name : '',
+      },
+    ] as const)
+    .sort(([firstKey], [secondKey]) => firstKey.localeCompare(secondKey));
+  const roundDeadlineEntries = Object.entries(payload.roundDeadlineDrafts ?? {})
+    .map(([roundNumber, value]) => [
+      Number(roundNumber),
+      typeof value === 'string' ? value : '',
+    ] as const)
+    .filter(([roundNumber]) => Number.isInteger(roundNumber) && roundNumber > 0)
+    .sort(([firstRound], [secondRound]) => firstRound - secondRound);
+
+  return {
+    drawSize: toTournamentDrawSize(payload.drawSize),
+    roundDeadlineDrafts: Object.fromEntries(roundDeadlineEntries) as Record<number, string>,
+    slotDrafts: Object.fromEntries(slotDraftEntries),
+  };
+}
+
+function getTournamentDrawDraftSignature(payload: TournamentDrawDraftPayload) {
+  const normalizedPayload = normalizeTournamentDrawDraftPayload(payload);
+
+  return JSON.stringify({
+    drawSize: normalizedPayload.drawSize,
+    roundDeadlineDrafts: Object.entries(normalizedPayload.roundDeadlineDrafts)
+      .map(([roundNumber, value]) => [Number(roundNumber), value] as const)
+      .sort(([firstRound], [secondRound]) => firstRound - secondRound),
+    slotDrafts: Object.entries(normalizedPayload.slotDrafts)
+      .map(([slotKey, draft]) => [slotKey, draft.participant_name] as const)
+      .sort(([firstKey], [secondKey]) => firstKey.localeCompare(secondKey)),
+  });
+}
+
+function readTournamentDrawLocalDraft(categoryId: string): TournamentDrawLocalDraft | null {
+  try {
+    const rawDraft = window.localStorage.getItem(getTournamentDrawDraftStorageKey(categoryId));
+
+    if (!rawDraft) {
+      return null;
+    }
+
+    const parsedDraft = JSON.parse(rawDraft) as Partial<TournamentDrawLocalDraft>;
+
+    if (
+      parsedDraft.categoryId !== categoryId ||
+      typeof parsedDraft.savedAt !== 'number' ||
+      !Number.isFinite(parsedDraft.savedAt)
+    ) {
+      return null;
+    }
+
+    return {
+      ...normalizeTournamentDrawDraftPayload({
+        drawSize: parsedDraft.drawSize,
+        roundDeadlineDrafts: parsedDraft.roundDeadlineDrafts,
+        slotDrafts: parsedDraft.slotDrafts,
+      }),
+      categoryId,
+      savedAt: parsedDraft.savedAt,
+    };
+  } catch (error) {
+    console.error('Tournament draw draft read error:', error);
+    return null;
+  }
+}
+
+function writeTournamentDrawLocalDraft(draft: TournamentDrawLocalDraft) {
+  try {
+    const normalizedDraft = normalizeTournamentDrawDraftPayload(draft);
+
+    window.localStorage.setItem(
+      getTournamentDrawDraftStorageKey(draft.categoryId),
+      JSON.stringify({
+        ...normalizedDraft,
+        categoryId: draft.categoryId,
+        savedAt: draft.savedAt,
+      }),
+    );
+
+    return true;
+  } catch (error) {
+    console.error('Tournament draw draft save error:', error);
+    return false;
+  }
+}
+
+function removeTournamentDrawLocalDraft(categoryId: string) {
+  try {
+    window.localStorage.removeItem(getTournamentDrawDraftStorageKey(categoryId));
+  } catch (error) {
+    console.error('Tournament draw draft remove error:', error);
+  }
+}
+
+function getLatestTournamentDrawDataTime(
+  slots: TournamentDrawSlot[],
+  roundSettings: TournamentRoundSetting[],
+) {
+  const slotTimes = slots.map((slot) => getTimestamp(slot.updated_at ?? slot.created_at));
+  const roundTimes = roundSettings.map((roundSetting) =>
+    getTimestamp(roundSetting.updated_at ?? roundSetting.created_at),
+  );
+
+  return Math.max(
+    0,
+    ...slotTimes,
+    ...roundTimes,
+  );
+}
+
+function getTimestamp(value: string | null) {
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp = Date.parse(value);
+
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 export default AdminPage;

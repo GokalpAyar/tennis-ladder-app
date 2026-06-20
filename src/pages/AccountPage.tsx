@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AppLayout from '../app/AppLayout';
 import { useAuth } from '../app/AuthProvider';
+import { TOURNAMENT_PORTAL_LABEL } from '../app/portalAccess';
 import { supabase } from '../lib/supabase';
 import {
   ensureProfile,
@@ -18,7 +20,8 @@ type Ranking = {
 };
 
 function AccountPage() {
-  const { session } = useAuth();
+  const navigate = useNavigate();
+  const { hasLadderAccess, portalPreference, session } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [ranking, setRanking] = useState<Ranking | null>(null);
   const [fullName, setFullName] = useState('');
@@ -27,14 +30,20 @@ function AccountPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [isRequestingLadderAccess, setIsRequestingLadderAccess] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [profileMessage, setProfileMessage] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
+  const [ladderRequestMessage, setLadderRequestMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [hasRequestedLadderAccess, setHasRequestedLadderAccess] = useState(false);
 
   const email = profile?.email || session?.user.email || 'Email unavailable';
   const wins = ranking?.wins ?? 0;
   const losses = ranking?.losses ?? 0;
   const rankPosition = ranking?.rank_position ?? null;
+  const showLadderAccessRequest =
+    !hasLadderAccess && portalPreference === 'tournament' && !hasRequestedLadderAccess;
 
   const recordLabel = useMemo(() => `${wins}-${losses}`, [wins, losses]);
 
@@ -175,6 +184,42 @@ function AccountPage() {
     setPasswordMessage('Password updated successfully.');
   }
 
+  async function handleRequestLadderAccess() {
+    if (!session?.user) {
+      return;
+    }
+
+    setIsRequestingLadderAccess(true);
+    setErrorMessage('');
+    setLadderRequestMessage('');
+
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        ...(session.user.user_metadata ?? {}),
+        portal_preference: 'both',
+      },
+    });
+
+    setIsRequestingLadderAccess(false);
+
+    if (error) {
+      console.error('Ladder access request error:', error);
+      setErrorMessage(formatSupabaseError(error));
+      return;
+    }
+
+    setHasRequestedLadderAccess(true);
+    setLadderRequestMessage(
+      "Men's Ladder access requested. Admin approval and rank assignment are required before ladder play.",
+    );
+  }
+
+  async function handleLogout() {
+    setIsLoggingOut(true);
+    await supabase.auth.signOut();
+    navigate('/login', { replace: true });
+  }
+
   return (
     <AppLayout>
       <section className="mx-auto w-full max-w-5xl space-y-5">
@@ -209,7 +254,7 @@ function AccountPage() {
                 </div>
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.16em] text-court-700">
-                    Player Account
+                    {hasLadderAccess ? 'Player Account' : 'Tournament Account'}
                   </p>
                   <h2 className="mt-1 text-xl font-black text-ink-900">
                     {profile?.full_name || 'Name not set'}
@@ -219,11 +264,17 @@ function AccountPage() {
 
               <dl className="mt-6 grid gap-3">
                 <AccountStat label="Email" value={email} />
-                <AccountStat
-                  label="Ladder Rank"
-                  value={rankPosition ? `#${rankPosition}` : 'Not ranked yet'}
-                />
-                <AccountStat label="Record" value={recordLabel} />
+                {hasLadderAccess ? (
+                  <>
+                    <AccountStat
+                      label="Ladder Rank"
+                      value={rankPosition ? `#${rankPosition}` : 'Not ranked yet'}
+                    />
+                    <AccountStat label="Record" value={recordLabel} />
+                  </>
+                ) : (
+                  <AccountStat label="Portal" value={TOURNAMENT_PORTAL_LABEL} />
+                )}
               </dl>
             </aside>
 
@@ -280,6 +331,40 @@ function AccountPage() {
                   {isSavingProfile ? 'Saving...' : 'Save Profile'}
                 </button>
               </form>
+
+              {(showLadderAccessRequest || ladderRequestMessage) && (
+                <section className="premium-card rounded-[2rem] p-5 sm:p-6">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-court-700">
+                      Men's Ladder Portal
+                    </p>
+                    <h2 className="mt-2 text-2xl font-black tracking-tight text-ink-900">
+                      Request ladder access
+                    </h2>
+                    <p className="mt-3 text-sm leading-6 text-ink-700">
+                      Ask to join the Roton Point Men's Ladder. An admin will review
+                      the request and assign a starting rank.
+                    </p>
+                  </div>
+
+                  {ladderRequestMessage ? (
+                    <p className="mt-4 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800">
+                      {ladderRequestMessage}
+                    </p>
+                  ) : (
+                    <button
+                      className="mt-5 inline-flex items-center justify-center rounded-full bg-court-900 px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-court-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                      onClick={handleRequestLadderAccess}
+                      disabled={isRequestingLadderAccess}
+                    >
+                      {isRequestingLadderAccess
+                        ? 'Requesting...'
+                        : "Request Men's Ladder Access"}
+                    </button>
+                  )}
+                </section>
+              )}
 
               <form
                 className="premium-card rounded-[2rem] p-5 sm:p-6"
@@ -338,6 +423,26 @@ function AccountPage() {
                   {isSavingPassword ? 'Updating...' : 'Update Password'}
                 </button>
               </form>
+
+              <section className="premium-card rounded-[2rem] p-5 sm:p-6">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-court-700">
+                    Session
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black tracking-tight text-ink-900">
+                    Sign out
+                  </h2>
+                </div>
+
+                <button
+                  className="mt-5 inline-flex items-center justify-center rounded-full border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-black text-red-700 shadow-sm transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  type="button"
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                >
+                  {isLoggingOut ? 'Logging out...' : 'Logout'}
+                </button>
+              </section>
             </div>
           </div>
         )}

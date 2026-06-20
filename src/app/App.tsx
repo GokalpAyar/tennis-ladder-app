@@ -129,9 +129,9 @@ function App() {
       <Route
         path="/account"
         element={
-          <LadderRoute>
+          <ProtectedRoute>
             <AccountPage />
-          </LadderRoute>
+          </ProtectedRoute>
         }
       />
       <Route
