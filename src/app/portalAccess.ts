@@ -25,9 +25,14 @@ export function getDefaultRouteForPortal(portalPreference: PortalPreference) {
   return portalPreference === 'tournament' ? '/tournaments' : '/dashboard';
 }
 
-export function hasLadderPortalAccess(
-  portalPreference: PortalPreference,
-  role: 'player' | 'admin',
-) {
-  return role === 'admin' || portalPreference !== 'tournament';
+export function hasApprovedLadderAccess({
+  hasLadderRanking,
+  profileStatus,
+  role,
+}: {
+  hasLadderRanking: boolean;
+  profileStatus: 'pending' | 'approved';
+  role: 'player' | 'admin';
+}) {
+  return role === 'admin' || (profileStatus === 'approved' && hasLadderRanking);
 }

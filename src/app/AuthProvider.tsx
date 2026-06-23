@@ -11,7 +11,7 @@ import { supabase } from '../lib/supabase';
 import {
   getDefaultRouteForPortal,
   getPortalPreferenceFromSession,
-  hasLadderPortalAccess,
+  hasApprovedLadderAccess,
   type PortalPreference,
 } from './portalAccess';
 
@@ -30,7 +30,8 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [portalPreference, setPortalPreference] = useState<PortalPreference>('ladder');
-  const [profileStatus, setProfileStatus] = useState<'pending' | 'approved'>('approved');
+  const [profileStatus, setProfileStatus] = useState<'pending' | 'approved'>('pending');
+  const [hasLadderRanking, setHasLadderRanking] = useState(false);
   const [role, setRole] = useState<'player' | 'admin'>('player');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -57,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPortalPreference(nextPortalPreference);
       setRole(profile.role);
       setProfileStatus(profile.status);
+      setHasLadderRanking(profile.hasLadderRanking);
       setIsLoading(false);
     }
 
@@ -83,7 +85,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const hasLadderAccess = hasLadderPortalAccess(portalPreference, role);
+  const hasLadderAccess = hasApprovedLadderAccess({
+    hasLadderRanking,
+    profileStatus,
+    role,
+  });
   const defaultRoute = getDefaultRouteForPortal(hasLadderAccess ? 'ladder' : 'tournament');
 
   const value = useMemo(
@@ -96,18 +102,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       session,
     }),
-    [defaultRoute, hasLadderAccess, isLoading, portalPreference, profileStatus, role, session],
+    [
+      defaultRoute,
+      hasLadderAccess,
+      isLoading,
+      portalPreference,
+      profileStatus,
+      role,
+      session,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 async function loadProfile(session: Session | null): Promise<{
+  hasLadderRanking: boolean;
   role: 'player' | 'admin';
   status: 'pending' | 'approved';
 }> {
   if (!session) {
-    return { role: 'player', status: 'approved' };
+    return { hasLadderRanking: false, role: 'player', status: 'pending' };
   }
 
   try {
@@ -120,12 +135,33 @@ async function loadProfile(session: Session | null): Promise<{
       4000,
     );
 
+    if (error || !data) {
+      return { hasLadderRanking: false, role: 'player', status: 'pending' };
+    }
+
+    const role = data.role === 'admin' ? 'admin' : 'player';
+    const status = data.status === 'approved' ? 'approved' : 'pending';
+
+    if (role === 'admin') {
+      return { hasLadderRanking: false, role, status };
+    }
+
+    const { data: rankingData, error: rankingError } = await withTimeout(
+      supabase
+        .from('ladder_rankings')
+        .select('player_id')
+        .eq('player_id', session.user.id)
+        .maybeSingle(),
+      4000,
+    );
+
     return {
-      role: error || data?.role !== 'admin' ? 'player' : 'admin',
-      status: data?.status === 'approved' ? 'approved' : 'pending',
+      hasLadderRanking: !rankingError && Boolean(rankingData),
+      role,
+      status,
     };
   } catch {
-    return { role: 'player', status: 'approved' };
+    return { hasLadderRanking: false, role: 'player', status: 'pending' };
   }
 }
 
