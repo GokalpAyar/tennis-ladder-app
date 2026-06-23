@@ -95,7 +95,6 @@ type DrawSaveStatus = 'saved' | 'unsaved' | 'draft-saved';
 
 type AdminSection =
   | 'pending'
-  | 'accounts'
   | 'tournamentAccounts'
   | 'ladder'
   | 'matches'
@@ -199,16 +198,10 @@ function AdminPage() {
     return new Map(rankings.map((ranking) => [ranking.player_id, ranking]));
   }, [rankings]);
 
-  const sortedProfiles = useMemo(() => {
+  const tournamentPortalProfiles = useMemo(() => {
     return [...profiles].sort((first, second) =>
       getProfileName(first).localeCompare(getProfileName(second)),
     );
-  }, [profiles]);
-
-  const tournamentPortalProfiles = useMemo(() => {
-    return profiles
-      .filter((profile) => profile.wants_tournaments === true || profile.status === 'rejected')
-      .sort((first, second) => getProfileName(first).localeCompare(getProfileName(second)));
   }, [profiles]);
 
   const pendingProfiles = useMemo(() => {
@@ -1172,10 +1165,9 @@ function AdminPage() {
               <SummaryCard label="Categories" value={tournamentCategories.length} />
             </section>
 
-            <nav className="grid gap-2 rounded-3xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+            <nav className="grid gap-2 rounded-3xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
               {([
                 ['pending', 'Pending Players'],
-                ['accounts', 'All Accounts'],
                 ['tournamentAccounts', 'Tournament Portal Accounts'],
                 ['ladder', 'Ladder Management'],
                 ['matches', 'Matches'],
@@ -1198,84 +1190,30 @@ function AdminPage() {
               ))}
             </nav>
 
-            {activeSection === 'accounts' && (
-              <AdminPanel
-                title="All Accounts"
-                description="Read-only list of registered profiles and their ladder status."
-              >
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                  <div className="hidden grid-cols-[minmax(0,1.25fr)_minmax(0,1.35fr)_7rem_9rem_9rem] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 lg:grid">
-                    <span>Name</span>
-                    <span>Email</span>
-                    <span>Role</span>
-                    <span>Status</span>
-                    <span>Ladder</span>
-                  </div>
-                  <div className="divide-y divide-slate-200">
-                    {sortedProfiles.length === 0 ? (
-                      <AdminEmptyState message="No accounts found." />
-                    ) : (
-                      sortedProfiles.map((profile) => {
-                        const ranking = rankingsByPlayerId.get(profile.id);
-
-                        return (
-                          <article
-                            className="grid gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1.35fr)_7rem_9rem_9rem] lg:items-center"
-                            key={profile.id}
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate font-black text-[#071a3d]">
-                                {getProfileName(profile)}
-                              </p>
-                              <p className="mt-1 text-xs font-semibold text-slate-500 lg:hidden">
-                                {profile.email ?? 'Email not stored'}
-                              </p>
-                            </div>
-                            <p className="hidden truncate font-semibold text-slate-700 lg:block">
-                              {profile.email ?? 'Email not stored'}
-                            </p>
-                            <p className="font-black capitalize text-[#071a3d]">
-                              {profile.role ?? 'player'}
-                            </p>
-                            <p className="font-semibold capitalize text-slate-700">
-                              {profile.status ?? 'unknown'}
-                            </p>
-                            <p className="font-black text-[#071a3d]">
-                              {ranking ? `Ranked #${ranking.rank_position}` : 'Not ranked'}
-                            </p>
-                          </article>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              </AdminPanel>
-            )}
-
             {activeSection === 'tournamentAccounts' && (
               <AdminPanel
                 title={`Tournament Portal Accounts (${tournamentPortalProfiles.length})`}
-                description="Read-only list of accounts that requested Tournament Portal access."
+                description="Read-only list of registered profiles with Tournament Portal access."
               >
                 <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                  <div className="hidden grid-cols-[minmax(0,1.15fr)_minmax(0,1.25fr)_6rem_8rem_9rem_9rem] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 lg:grid">
+                  <div className="hidden grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_6rem_8rem_9rem_minmax(11rem,1fr)] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 lg:grid">
                     <span>Name</span>
                     <span>Email</span>
                     <span>Role</span>
                     <span>Profile</span>
                     <span>Tournament</span>
-                    <span>Ladder</span>
+                    <span>Ladder Request / Access</span>
                   </div>
                   <div className="divide-y divide-slate-200">
                     {tournamentPortalProfiles.length === 0 ? (
-                      <AdminEmptyState message="No Tournament Portal accounts found." />
+                      <AdminEmptyState message="No accounts found." />
                     ) : (
                       tournamentPortalProfiles.map((profile) => {
                         const ranking = rankingsByPlayerId.get(profile.id);
 
                         return (
                           <article
-                            className="grid gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.25fr)_6rem_8rem_9rem_9rem] lg:items-center"
+                            className="grid gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_6rem_8rem_9rem_minmax(11rem,1fr)] lg:items-center"
                             key={profile.id}
                           >
                             <div className="min-w-0">
@@ -1299,7 +1237,7 @@ function AdminPage() {
                               {profile.tournament_status ?? 'Not set'}
                             </p>
                             <p className="font-black text-[#071a3d]">
-                              {ranking ? `Ranked #${ranking.rank_position}` : 'Not ranked'}
+                              {getLadderAccountStatus(profile, ranking)}
                             </p>
                           </article>
                         );
@@ -2413,6 +2351,22 @@ function getSafeStatusOptions(match: Match) {
 
 function getProfileName(profile: Profile | undefined) {
   return profile?.full_name?.trim() || profile?.email || 'Unnamed player';
+}
+
+function getLadderAccountStatus(profile: Profile, ranking: LadderRanking | undefined) {
+  if (ranking) {
+    return `Approved / Ranked #${ranking.rank_position}`;
+  }
+
+  if (profile.status === 'pending' && profile.wants_ladder === true) {
+    return 'Pending Men’s Ladder Request';
+  }
+
+  if (profile.status === 'rejected') {
+    return 'Rejected Men’s Ladder Request';
+  }
+
+  return 'Tournament Portal Only / Not ranked';
 }
 
 function getRankingKey(ranking: LadderRanking) {
