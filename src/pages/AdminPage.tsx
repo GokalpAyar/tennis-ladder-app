@@ -90,7 +90,14 @@ type TournamentDrawLocalDraft = TournamentDrawDraftPayload & {
 
 type DrawSaveStatus = 'saved' | 'unsaved' | 'draft-saved';
 
-type AdminSection = 'pending' | 'ladder' | 'matches' | 'categories' | 'draws' | 'settings';
+type AdminSection =
+  | 'pending'
+  | 'accounts'
+  | 'ladder'
+  | 'matches'
+  | 'categories'
+  | 'draws'
+  | 'settings';
 type MatchFilter = 'active' | 'time' | 'scheduled' | 'completed' | 'canceled';
 
 const tournamentDrawDraftStoragePrefix = 'roton-point:tournament-draw-draft:';
@@ -183,6 +190,16 @@ function AdminPage() {
   const rankedPlayerIds = useMemo(() => {
     return new Set(rankings.map((ranking) => ranking.player_id));
   }, [rankings]);
+
+  const rankingsByPlayerId = useMemo(() => {
+    return new Map(rankings.map((ranking) => [ranking.player_id, ranking]));
+  }, [rankings]);
+
+  const sortedProfiles = useMemo(() => {
+    return [...profiles].sort((first, second) =>
+      getProfileName(first).localeCompare(getProfileName(second)),
+    );
+  }, [profiles]);
 
   const pendingProfiles = useMemo(() => {
     return profiles
@@ -1131,7 +1148,8 @@ function AdminPage() {
           </div>
         ) : (
           <>
-            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+              <SummaryCard label="Accounts" value={profiles.length} />
               <SummaryCard label="Pending" value={pendingProfiles.length} />
               <SummaryCard label="Ranked" value={rankings.length} />
               <SummaryCard label="Scheduled" value={matchCounts.scheduled} />
@@ -1139,9 +1157,10 @@ function AdminPage() {
               <SummaryCard label="Categories" value={tournamentCategories.length} />
             </section>
 
-            <nav className="grid gap-2 rounded-3xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-2 lg:grid-cols-6">
+            <nav className="grid gap-2 rounded-3xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-2 lg:grid-cols-7">
               {([
                 ['pending', 'Pending Players'],
+                ['accounts', 'All Accounts'],
                 ['ladder', 'Ladder Management'],
                 ['matches', 'Matches'],
                 ['categories', 'Categories'],
@@ -1162,6 +1181,60 @@ function AdminPage() {
                 </button>
               ))}
             </nav>
+
+            {activeSection === 'accounts' && (
+              <AdminPanel
+                title="All Accounts"
+                description="Read-only list of registered profiles and their ladder status."
+              >
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                  <div className="hidden grid-cols-[minmax(0,1.25fr)_minmax(0,1.35fr)_7rem_9rem_9rem] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 lg:grid">
+                    <span>Name</span>
+                    <span>Email</span>
+                    <span>Role</span>
+                    <span>Status</span>
+                    <span>Ladder</span>
+                  </div>
+                  <div className="divide-y divide-slate-200">
+                    {sortedProfiles.length === 0 ? (
+                      <AdminEmptyState message="No accounts found." />
+                    ) : (
+                      sortedProfiles.map((profile) => {
+                        const ranking = rankingsByPlayerId.get(profile.id);
+
+                        return (
+                          <article
+                            className="grid gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1.35fr)_7rem_9rem_9rem] lg:items-center"
+                            key={profile.id}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-black text-[#071a3d]">
+                                {getProfileName(profile)}
+                              </p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500 lg:hidden">
+                                {profile.email ?? 'Email not stored'}
+                              </p>
+                            </div>
+                            <p className="hidden truncate font-semibold text-slate-700 lg:block">
+                              {profile.email ?? 'Email not stored'}
+                            </p>
+                            <p className="font-black capitalize text-[#071a3d]">
+                              {profile.role ?? 'player'}
+                            </p>
+                            <p className="font-semibold capitalize text-slate-700">
+                              {profile.status ?? 'unknown'}
+                            </p>
+                            <p className="font-black text-[#071a3d]">
+                              {ranking ? `Ranked #${ranking.rank_position}` : 'Not ranked'}
+                            </p>
+                          </article>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </AdminPanel>
+            )}
 
             {activeSection === 'pending' && (
               <AdminPanel title="Pending Players" description="Approve new members and assign a starting rank.">
