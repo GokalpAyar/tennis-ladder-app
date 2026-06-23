@@ -207,7 +207,7 @@ function AdminPage() {
 
   const tournamentPortalProfiles = useMemo(() => {
     return profiles
-      .filter((profile) => profile.wants_tournaments === true)
+      .filter((profile) => profile.wants_tournaments === true || profile.status === 'rejected')
       .sort((first, second) => getProfileName(first).localeCompare(getProfileName(second)));
   }, [profiles]);
 
