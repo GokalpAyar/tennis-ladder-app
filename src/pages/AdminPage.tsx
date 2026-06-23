@@ -26,6 +26,7 @@ type Profile = {
   email: string | null;
   role: 'player' | 'admin' | null;
   status: 'pending' | 'approved' | 'rejected' | 'inactive' | null;
+  wants_ladder: boolean | null;
 };
 
 type LadderRanking = {
@@ -203,7 +204,7 @@ function AdminPage() {
 
   const pendingProfiles = useMemo(() => {
     return profiles
-      .filter((profile) => profile.status === 'pending')
+      .filter((profile) => profile.status === 'pending' && profile.wants_ladder === true)
       .sort((first, second) => getProfileName(first).localeCompare(getProfileName(second)));
   }, [profiles]);
 
@@ -323,7 +324,10 @@ function AdminPage() {
       { data: matchRows, error: matchesError },
       { data: tournamentCategoryRows, error: tournamentCategoriesError },
     ] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, email, role, status').order('full_name'),
+      supabase
+        .from('profiles')
+        .select('id, full_name, email, role, status, wants_ladder')
+        .order('full_name'),
       supabase
         .from('ladder_rankings')
         .select('id, player_id, rank_position, wins, losses')
@@ -398,7 +402,7 @@ function AdminPage() {
       const nextDrafts = { ...current };
 
       nextProfiles
-        .filter((profile) => profile.status === 'pending')
+        .filter((profile) => profile.status === 'pending' && profile.wants_ladder === true)
         .forEach((profile, index) => {
           nextDrafts[profile.id] = nextDrafts[profile.id] ?? highestRank + index + 1;
         });
