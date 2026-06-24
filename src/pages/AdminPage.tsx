@@ -1196,13 +1196,12 @@ function AdminPage() {
                 description="Read-only list of registered profiles with Tournament Portal access."
               >
                 <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                  <div className="hidden grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_6rem_10rem_minmax(11rem,1fr)_10rem] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 lg:grid">
+                  <div className="hidden grid-cols-[minmax(0,1.15fr)_minmax(0,1.25fr)_6rem_11rem_minmax(12rem,1fr)] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 lg:grid">
                     <span>Name</span>
                     <span>Email</span>
                     <span>Role</span>
                     <span>Signup Type</span>
                     <span>Men’s Ladder Status</span>
-                    <span>Tournament Status</span>
                   </div>
                   <div className="divide-y divide-slate-200">
                     {tournamentPortalProfiles.length === 0 ? (
@@ -1213,7 +1212,7 @@ function AdminPage() {
 
                         return (
                           <article
-                            className="grid gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_6rem_10rem_minmax(11rem,1fr)_10rem] lg:items-center"
+                            className="grid gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.25fr)_6rem_11rem_minmax(12rem,1fr)] lg:items-center"
                             key={profile.id}
                           >
                             <div className="min-w-0">
@@ -1235,9 +1234,6 @@ function AdminPage() {
                             </p>
                             <p className="font-black text-[#071a3d]">
                               {getLadderAccountStatus(profile, ranking)}
-                            </p>
-                            <p className="font-semibold text-slate-700">
-                              {getTournamentAccountStatus(profile)}
                             </p>
                           </article>
                         );
@@ -2362,11 +2358,7 @@ function getSignupTypeLabel(profile: Profile) {
     return 'Men’s Ladder Only';
   }
 
-  if (profile.wants_tournaments === true) {
-    return 'Tournament Only';
-  }
-
-  return 'Account Only / Unknown';
+  return 'Tournament Portal Only';
 }
 
 function getLadderAccountStatus(profile: Profile, ranking: LadderRanking | undefined) {
@@ -2387,18 +2379,6 @@ function getLadderAccountStatus(profile: Profile, ranking: LadderRanking | undef
   }
 
   return profile.status ? formatAccountStatusLabel(profile.status) : 'Requested';
-}
-
-function getTournamentAccountStatus(profile: Profile) {
-  if (profile.wants_tournaments !== true) {
-    return 'Not requested';
-  }
-
-  if (profile.tournament_status && profile.tournament_status !== 'pending') {
-    return formatAccountStatusLabel(profile.tournament_status);
-  }
-
-  return 'Active / Registered';
 }
 
 function formatAccountStatusLabel(status: string) {
