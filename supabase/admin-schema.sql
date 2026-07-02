@@ -340,6 +340,144 @@ before update on public.matches
 for each row
 execute function public.enforce_match_hardening_rules();
 
+drop trigger if exists award_declined_challenge_rank on public.matches;
+drop trigger if exists record_declined_challenge_forfeit on public.matches;
+drop function if exists public.award_declined_challenge_rank();
+
+create or replace function public.record_declined_challenge_forfeit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_is_admin boolean;
+  challenger_rank integer;
+  opponent_rank integer;
+  temp_rank integer;
+  updated_count integer;
+begin
+  if old.status <> 'pending' or new.status <> 'declined' then
+    return new;
+  end if;
+
+  select exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role = 'admin'
+  )
+  into actor_is_admin;
+
+  if auth.uid() is distinct from old.opponent_id and not actor_is_admin then
+    raise exception 'Only the challenged player can decline a pending challenge.';
+  end if;
+
+  if new.challenger_id is distinct from old.challenger_id
+    or new.opponent_id is distinct from old.opponent_id
+  then
+    raise exception 'Challenge players cannot be changed while declining a challenge.';
+  end if;
+
+  new.winner_id := old.challenger_id;
+
+  if coalesce(old.stats_recorded, false) then
+    new.stats_recorded := true;
+  else
+    update public.ladder_rankings
+    set wins = wins + 1
+    where player_id = old.challenger_id;
+
+    get diagnostics updated_count = row_count;
+
+    if updated_count <> 1 then
+      raise exception 'Challenger ladder ranking was not found for player_id %.', old.challenger_id;
+    end if;
+
+    update public.ladder_rankings
+    set losses = losses + 1
+    where player_id = old.opponent_id;
+
+    get diagnostics updated_count = row_count;
+
+    if updated_count <> 1 then
+      raise exception 'Opponent ladder ranking was not found for player_id %.', old.opponent_id;
+    end if;
+
+    new.stats_recorded := true;
+  end if;
+
+  if coalesce(old.ranking_updated, false) then
+    new.ranking_updated := true;
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('ladder_rankings_reorder'));
+
+  select rank_position into challenger_rank
+  from public.ladder_rankings
+  where player_id = old.challenger_id;
+
+  select rank_position into opponent_rank
+  from public.ladder_rankings
+  where player_id = old.opponent_id;
+
+  if challenger_rank is null then
+    raise exception 'Challenger ladder rank_position was not found for player_id %.', old.challenger_id;
+  end if;
+
+  if opponent_rank is null then
+    raise exception 'Opponent ladder rank_position was not found for player_id %.', old.opponent_id;
+  end if;
+
+  if challenger_rank > opponent_rank then
+    select coalesce(max(rank_position), 0) + 10000
+    into temp_rank
+    from public.ladder_rankings;
+
+    update public.ladder_rankings
+    set rank_position = temp_rank
+    where player_id = old.challenger_id;
+
+    get diagnostics updated_count = row_count;
+
+    if updated_count <> 1 then
+      raise exception 'Could not temporarily move challenger % during declined challenge rank swap.', old.challenger_id;
+    end if;
+
+    update public.ladder_rankings
+    set rank_position = challenger_rank
+    where player_id = old.opponent_id;
+
+    get diagnostics updated_count = row_count;
+
+    if updated_count <> 1 then
+      raise exception 'Could not move opponent % to rank_position % during declined challenge rank swap.', old.opponent_id, challenger_rank;
+    end if;
+
+    update public.ladder_rankings
+    set rank_position = opponent_rank
+    where player_id = old.challenger_id;
+
+    get diagnostics updated_count = row_count;
+
+    if updated_count <> 1 then
+      raise exception 'Could not move challenger % to rank_position % during declined challenge rank swap.', old.challenger_id, opponent_rank;
+    end if;
+  end if;
+
+  new.ranking_updated := true;
+
+  return new;
+end;
+$$;
+
+create trigger record_declined_challenge_forfeit
+before update on public.matches
+for each row
+when (old.status = 'pending' and new.status = 'declined')
+execute function public.record_declined_challenge_forfeit();
+
 create or replace function public.is_admin(user_id uuid default auth.uid())
 returns boolean
 language sql

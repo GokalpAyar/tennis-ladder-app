@@ -4014,7 +4014,7 @@ function ChallengeCard({
     pendingChallengeConfirmation === 'accept'
       ? `Accept ${opponentName}'s challenge and start setting up a match time.`
       : pendingChallengeConfirmation === 'decline'
-        ? `Decline ${opponentName}'s challenge? This match will leave your active challenges.`
+        ? 'Declining this challenge counts as a forfeit. The challenger will receive the win, your ranking position will be awarded to them, and a loss will be added to your record.'
         : 'Cancel this match? This removes it from active challenges and scheduled matches.';
 
   async function confirmChallengeAction() {
