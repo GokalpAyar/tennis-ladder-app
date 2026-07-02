@@ -3999,7 +3999,11 @@ function ChallengeCard({
     (match.status === 'accepted' || match.status === 'time_proposed');
   const isTimeProposer = match.proposed_by_player_id === currentPlayer.id;
   const isCanceling = cancelingMatchId === match.id;
-  const canCancel = CANCELABLE_MATCH_STATUSES.includes(match.status);
+  const canCancel =
+    match.status === 'pending'
+      ? isChallenger
+      : CANCELABLE_MATCH_STATUSES.includes(match.status);
+  const cancelActionLabel = match.status === 'pending' ? 'Cancel Challenge' : 'Cancel Match';
   const opponentName = getOpponentName(match, currentPlayer, playersById);
   const hasProposedTimes = match.proposed_match_options.length > 0;
   const shouldShowProposalForm = !hasProposedTimes || isRequestingNewTimes;
@@ -4180,7 +4184,7 @@ function ChallengeCard({
             disabled={isCanceling || actionId === match.id}
           >
             <XIcon />
-            {isCanceling ? 'Canceling...' : 'Cancel Match'}
+            {isCanceling ? 'Canceling...' : cancelActionLabel}
           </button>
         </div>
       )}
